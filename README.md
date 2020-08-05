@@ -15,17 +15,33 @@ Control car gate at my building
 * Make sure SSH interface is enabled
 * Advance - Audio - Headphones
 * Reboot
-* `sudo apt update`
-* `sudo apt upgrade -y`
-* `sudo apt install espeak mpg321 python3-pip vim -y`
-* ```sudo rm `python` ```
-* ```sudo ln -s `python3` /usr/bin/python```
-* connect over winscp
-* `copy all mp3 to /home/pi/src/mp3`
-* `copy ping.mp3 gatectl.py gatectl.sh whitelist.txt to /home/pi/src`
-* `alsamixer` to set headphone volume to max
-* `python -m pip install --upgrade pip`
-* `python -m pip install tendo ansicolors colorama baker`
-* `sudo vim /etc/rc.local and /home/pi/.bashrc` - Add before the `exit 0`
-```/home/pi/src/gatectl.sh &```
-* Set the timezone
+* Update the system and install packages:
+```
+sudo apt update
+sudo apt upgrade -y
+sudo apt install espeak mpg321 python3-pip vim -y
+sudo rm `which python`
+sudo ln -s `python3` /usr/bin/python
+python -m pip install --upgrade pip
+python -m pip install tendo ansicolors colorama baker
+```
+* Over FTP/SFTP
+    * copy all mp3 to `/home/pi/src/mp3`
+    * copy `ping.mp3`, `gatectl.py`, `gatectl.sh` and `whitelist.txt` to `/home/pi/src`
+* Add gate control script to startup by editing `/etc/rc.local` and `/home/pi/.bashrc` - Add before the `exit 0`
+```
+/home/pi/src/gatectl.sh &
+```
+* More configurations tweaks
+    * `alsamixer` to set headphone volume to max
+    * Edit `/boot/config.txt`
+        * Disable Bluetooth to reduce noise by adding ```dtoverlay=disable-bt```
+        * If using external WiFi dongle add ```dtoverlay=disable-wifi```
+    * Set the timezone to make logs more readable
+    * Execute:
+```
+sudo systemctl disable hciuart.service
+sudo systemctl disable bluealsa.service
+sudo systemctl disable bluetooth.service
+````
+

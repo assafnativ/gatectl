@@ -54,6 +54,9 @@ class GateCtl(object):
         self.down_gpio = down_gpio
         self.hold_gpio = hold_gpio
 
+    def close(self):
+        GPIO.cleanup()
+
     def oprate_pin(self, pin_number, active_low=False):
         GPIO.setup(pin_number, GPIO.OUT)
         if active_low:
@@ -174,6 +177,9 @@ class GSMHat(object):
     def send(self, data):
         self.serial.write(data)
 
+    def close(self):
+        self.serial.close()
+
 def runInBackground(cmd):
     logPrint("Executing: " + colors.blue(cmd))
     _ = subprocess.Popen(
@@ -198,6 +204,16 @@ class GateCtlOverGSM(object):
         self.gsm = GSMHat(verbose=verbose)
         self.lastPing = time.time()
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, t, value, tb):
+        self.gsm.close()
+        self.gsm = None
+        self.gateCtl.close()
+        self.gateCtl = None
+        return
+
     def answerCall(self, data):
         with open("gate.log", "ab") as gateLog:
             gateLog.write(time.ctime().encode('utf8') + b'\t' + data + b'\n')
@@ -209,7 +225,7 @@ class GateCtlOverGSM(object):
         logPrint("%r is calling" % callerId)
         whitelist = open('whitelist.txt', 'rb').read()
         whitelist = whitelist.split()
-        if callerId in whitelist or ('+972' + callerId[1:]) in whitelist:
+        if callerId in whitelist or (b'+972' + callerId[1:]) in whitelist:
             self.gateCtl.up()
             return True
         return False
@@ -266,13 +282,14 @@ def run(verbose=False):
     logPrint(colors.blue("Starting!"))
     while True:
         try:
-            gateCtlOverGSM = GateCtlOverGSM(verbose=verbose)
-            gateCtlOverGSM.mainLoop()
+            with GateCtlOverGSM(verbose=verbose) as gateCtlOverGSM:
+                gateCtlOverGSM.mainLoop()
         except:
             traceback.print_exc(file=log_file)
 
 if __name__ == '__main__':
     me = singleton.SingleInstance()
+
     colorama.init(strip=False)
     logPrint("My PID is %d" % os.getpid())
     baker.run()

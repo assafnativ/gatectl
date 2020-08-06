@@ -22,7 +22,9 @@ GPIO_GATE_HOLD  = 40 # Not in use
 
 MP3_PLAYER = 'mpg321'
 LOG_FILE_NAME = "gatectl_log.txt"
-PING_INTERVAL = 60 * 10
+PING_INTERVAL = 60 * 2
+
+GATEUP_TRIGGER_FILE = 'GATEUP'
 
 log_file = None
 def logPrint(text, is_verbose=True):
@@ -120,7 +122,7 @@ class GSMHat(object):
         time.sleep(4)
         GPIO.output(GSM_PWR_PIN, GPIO.HIGH)
         logPrint("GSM hat power on")
-        time.sleep(20)
+        time.sleep(10)
 
     def pingDevice(self):
         #logPrint("Ping GSM hat")
@@ -172,7 +174,7 @@ class GSMHat(object):
 
     def sendCmd(self, cmd):
         self.send(cmd + b'\r\n')
-        time.sleep(0.2)
+        time.sleep(0.1)
 
     def send(self, data):
         self.serial.write(data)
@@ -226,9 +228,12 @@ class GateCtlOverGSM(object):
         whitelist = open('whitelist.txt', 'rb').read()
         whitelist = whitelist.split()
         if callerId in whitelist or (b'+972' + callerId[1:]) in whitelist:
-            self.gateCtl.up()
+            self.gateUp()
             return True
         return False
+
+    def gateUp(self):
+        self.gateCtl.up()
 
     def handleSMS(self, msgs):
         for _, smsSender, msg in msgs:
@@ -255,8 +260,11 @@ class GateCtlOverGSM(object):
                 if l.startswith(b'+CMTI:'):
                     self.handleSMS(self.gsm.readSMS())
                 if b"POWER DOWN" in l:
-                    time.sleep(5)
+                    time.sleep(4)
                     self.resetIfNeeded()
+            if os.path.isfile(GATEUP_TRIGGER_FILE):
+                os.unlink(GATEUP_TRIGGER_FILE)
+                self.gateUp()
             if PING_INTERVAL < (time.time() - self.lastPing):
                 self.resetIfNeeded()
                 self.lastPing = time.time()

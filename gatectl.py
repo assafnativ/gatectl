@@ -12,19 +12,28 @@ import baker
 import os
 import sys
 import traceback
+import re
+from datetime import datetime
 from tendo import singleton
 import RPi.GPIO as GPIO
 
-GSM_PWR_PIN = 7
+GSM_PWR_PIN = 7                 # 31 on SIM7600X
+GSM_SERIAL_DEV = "/dev/ttyUSB0" # /dev/ttyS0 on SIM7600X
 GPIO_GATE_UP    = 36
 GPIO_GATE_DOWN  = 38 # Not in use
 GPIO_GATE_HOLD  = 40 # Not in use
 
 MP3_PLAYER = 'mpg321'
-LOG_FILE_NAME = "gatectl_log.txt"
+curent_datetime_str = datetime.now().strftime("%Y%m%d_%I%M")
+LOG_FILE_NAME = "ctl_%s.log" % curent_datetime_str
+OPERATION_LOG = "operation_%s.log"
 PING_INTERVAL = 60 * 2
+MAX_FAILS_IN_A_ROW = 4
 
 GATEUP_TRIGGER_FILE = 'GATEUP'
+KILL_FILE = 'KILLAPP'
+
+MUST_EXITS_USB = [b'148f:7601', b'0403:6001']
 
 log_file = None
 def logPrint(text, is_verbose=True):
@@ -91,7 +100,7 @@ class GSMHat(object):
         logPrint("Starting GSMHat")
         GPIO.setup(GSM_PWR_PIN, GPIO.OUT)
         self.verbose = verbose
-        self.serial = serial.Serial("/dev/ttyUSB0", 115200, timeout=1)
+        self.serial = serial.Serial(GSM_SERIAL_DEV, 115200, timeout=1)
         self.pwrOnIfNeeded()
         logPrint("Connected to GSM hat")
         self.recv()
@@ -122,12 +131,11 @@ class GSMHat(object):
         time.sleep(4)
         GPIO.output(GSM_PWR_PIN, GPIO.HIGH)
         logPrint("GSM hat power on")
-        time.sleep(10)
+        time.sleep(20)
 
     def pingDevice(self):
-        #logPrint("Ping GSM hat")
         self.sendCmd(b"AT")
-        recv = self.recv()
+        recv = self.recv(quiet=True)
         if 10 < len(recv) and self.verbose:
             logPrint("Got extra data: " + colors.red(recv.decode('utf8')))
         return b"OK" in recv[-10:]
@@ -165,10 +173,10 @@ class GSMHat(object):
     def normalizedRecv(self):
         return [x.strip() for x in self.recv().replace(b'\r\n', b'\n').split(b'\n') if x.strip()]
 
-    def recv(self):
+    def recv(self, quiet=False):
         data = self.serial.read(self.serial.inWaiting())
         clearData = data.decode('utf8').strip()
-        if clearData and self.verbose:
+        if clearData and self.verbose and not quiet:
             logPrint(colors.faint(colors.red(clearData)))
         return data
 
@@ -210,15 +218,22 @@ class GateCtlOverGSM(object):
         return self
 
     def __exit__(self, t, value, tb):
+        print('__exit__ %r %r %r' % (t, value, tb))
         self.gsm.close()
         self.gsm = None
         self.gateCtl.close()
         self.gateCtl = None
+        if tb or value or t:
+            trace = traceback.format_exc()
+            logPrint(colors.red(trace))
         return
 
+    def writeToOperationLog(self, msg):
+        operationLog = OPERATION_LOG % datetime.now().strftime("%Y%m%d")
+        with open(operationLog, "ab") as log:
+            log.write(time.ctime().encode('utf8') + msg)
+
     def answerCall(self, data):
-        with open("gate.log", "ab") as gateLog:
-            gateLog.write(time.ctime().encode('utf8') + b'\t' + data + b'\n')
         call_details = data.split()
         callerInfo = call_details[1]
         if callerInfo.count(b',') < 1:
@@ -227,16 +242,21 @@ class GateCtlOverGSM(object):
         logPrint("%r is calling" % callerId)
         whitelist = open('whitelist.txt', 'rb').read()
         whitelist = whitelist.split()
+        isAllowedIn = False
         if callerId in whitelist or (b'+972' + callerId[1:]) in whitelist:
+            isAllowedIn = True
             self.gateUp()
-            return True
-        return False
+        self.writeToOperationLog(b'\tCall:\t' + callerId + b'\t%r\n' % isAllowedIn)
+        return isAllowedIn
 
     def gateUp(self):
         self.gateCtl.up()
 
     def handleSMS(self, msgs):
         for _, smsSender, msg in msgs:
+            self.writeToOperationLog( \
+                b'\tSMS:\t' + smsSender.encode('utf8') + \
+                b'\t%s\n' % msg.encode('utf8', errors='ignore'))
             for fname in os.listdir('./mp3/'):
                 if not fname.endswith('.mp3'):
                     continue
@@ -265,9 +285,15 @@ class GateCtlOverGSM(object):
             if os.path.isfile(GATEUP_TRIGGER_FILE):
                 os.unlink(GATEUP_TRIGGER_FILE)
                 self.gateUp()
+            if os.path.isfile(KILL_FILE):
+                os.unlink(KILL_FILE)
+                logPrint(colors.magenta("KTHXBYE"))
+                return False
             if PING_INTERVAL < (time.time() - self.lastPing):
+                logPrint("Pi temperature is %f" % get_pi_temperature())
                 self.resetIfNeeded()
                 self.lastPing = time.time()
+                validate_usb()
 
 @baker.command
 def kill_process_by_name(target):
@@ -284,21 +310,55 @@ def kill_process_by_name(target):
         logPrint(colors.red("Killed %d" % pid))
 
 @baker.command
+def get_pi_temperature():
+    stdout, _ = subprocess.Popen(['vcgencmd', 'measure_temp'], stdout=subprocess.PIPE).communicate()
+    result = re.findall(b"([0-9\\.]*)'C", stdout)
+    if 1 != len(result):
+        return 0.0
+    return float(result[0])
+
+@baker.command
+def validate_usb():
+    stdout, _ = subprocess.Popen(['lsusb'], stdout=subprocess.PIPE).communicate()
+    for usb_id in MUST_EXITS_USB:
+        if usb_id not in stdout:
+            logPrint(colors.red("USB failure!"))
+            reboot_system()
+            return True
+    return False
+
+@baker.command
+def reboot_system():
+    print(colors.red("Rebooting!!!"))
+    runInBackground("reboot")
+
+@baker.command
 def run(verbose=False):
+    me = singleton.SingleInstance()
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    logPrint("My PID is %d" % os.getpid())
     playMusic('ping.mp3')
     logPrint(colors.blue("Starting!"))
-    while True:
+    lastFail = 0
+    failCount = 0
+    keepRunning = True
+    while keepRunning:
         try:
             with GateCtlOverGSM(verbose=verbose) as gateCtlOverGSM:
-                gateCtlOverGSM.mainLoop()
+                keepRunning = gateCtlOverGSM.mainLoop()
         except:
             traceback.print_exc(file=log_file)
+            time.sleep(5)
+            if 60 < (time.time() - lastFail):
+                failCount = 1
+            else:
+                failCount += 1
+            print("System error %d" % failCount)
+            lastFail = time.time()
+            if MAX_FAILS_IN_A_ROW < failCount:
+                reboot_system()
 
 if __name__ == '__main__':
-    me = singleton.SingleInstance()
-
     colorama.init(strip=False)
-    logPrint("My PID is %d" % os.getpid())
     baker.run()
 

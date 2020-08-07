@@ -17,8 +17,10 @@ from datetime import datetime
 from tendo import singleton
 import RPi.GPIO as GPIO
 
-GSM_PWR_PIN = 7                 # 31 on SIM7600X
-GSM_SERIAL_DEV = "/dev/ttyUSB0" # /dev/ttyS0 on SIM7600X
+GSM_PWR_PIN = 7
+#GSM_PWR_PIN = 31 # SIM7600X
+GSM_SERIAL_DEV = "/dev/ttyUSB0"
+#GSM_SERIAL_DEV = "/dev/ttyS0" # SIM7600X
 GPIO_GATE_UP    = 36
 GPIO_GATE_DOWN  = 38 # Not in use
 GPIO_GATE_HOLD  = 40 # Not in use
@@ -109,7 +111,7 @@ class GSMHat(object):
         if self.pingDevice():
             return False
         # Try to power up the GSM Hat
-        logPrint("Need to startup GSM hat")
+        logPrint("Need to power up GSM hat")
         self.pwrSwitch()
         logPrint("Done - trying to ping GSM hat")
         if not self.pingDevice():

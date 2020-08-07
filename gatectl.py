@@ -27,8 +27,8 @@ GPIO_GATE_HOLD  = 40 # Not in use
 
 MP3_PLAYER = 'mpg321'
 curent_datetime_str = datetime.now().strftime("%Y%m%d_%I%M")
-LOG_FILE_NAME = "ctl_%s.log" % curent_datetime_str
-OPERATION_LOG = "operation_%s.log"
+LOG_FILE_NAME = "logs/ctl_%s.log" % curent_datetime_str
+OPERATION_LOG = "logs/operation_%s.log"
 PING_INTERVAL = 60 * 2
 MAX_FAILS_IN_A_ROW = 4
 
@@ -37,22 +37,30 @@ KILL_FILE = 'KILLAPP'
 
 MUST_EXITS_USB = [b'148f:7601', b'0403:6001']
 
+MAX_LOG_FILE_SIZE = 1024 * 1024 * 100
+
 log_file = None
 def logPrint(text, is_verbose=True):
     global log_file
     if not log_file:
-        log_file_size = 0
-        try:
-            log_file_size = os.path.getsize(LOG_FILE_NAME)
-        except OSError:
-            log_file_size = 0
-        if (1024 * 1024 * 100) < log_file_size:
-            os.unlink(LOG_FILE_NAME)
-        log_file = open(LOG_FILE_NAME, 'a')
+        log_file = safeOpenAppend(LOG_FILE_NAME)
     if is_verbose:
         print(text)
         log_file.write(time.ctime() + '\t' + text+"\n")
         log_file.flush()
+
+def safeOpenAppend(fileName):
+    dirName = os.path.dirname(fileName)
+    if dirName:
+        os.makedirs(dirName, exist_ok=True)
+    targetFileSize = 0
+    try:
+        targetFileSize = os.path.getsize(fileName)
+    except OSError:
+        targetFileSize = 0
+    if MAX_LOG_FILE_SIZE < targetFileSize:
+        os.unlink(fileName)
+    return open(fileName, 'a')
 
 
 class GateCtl(object):
@@ -220,7 +228,6 @@ class GateCtlOverGSM(object):
         return self
 
     def __exit__(self, t, value, tb):
-        print('__exit__ %r %r %r' % (t, value, tb))
         self.gsm.close()
         self.gsm = None
         self.gateCtl.close()
@@ -349,7 +356,8 @@ def run(verbose=False):
             with GateCtlOverGSM(verbose=verbose) as gateCtlOverGSM:
                 keepRunning = gateCtlOverGSM.mainLoop()
         except:
-            traceback.print_exc(file=log_file)
+            last_error = traceback.format_exc()
+            logPrint(colors.bold(colors.red(last_error)))
             time.sleep(5)
             if 60 < (time.time() - lastFail):
                 failCount = 1

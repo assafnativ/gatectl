@@ -132,3 +132,7 @@ dmypy.json
 *~
 *.swp
 *.swo
+
+# Personal files
+/logs/*
+whitelist.txt

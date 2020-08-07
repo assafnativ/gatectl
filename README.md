@@ -22,8 +22,8 @@ sudo apt upgrade -y
 sudo apt install espeak mpg321 python3-pip vim -y
 sudo rm `which python`
 sudo ln -s `python3` /usr/bin/python
-python -m pip install --upgrade pip
-python -m pip install tendo ansicolors colorama baker
+sudo python -m pip install --upgrade pip
+sudo python -m pip install tendo ansicolors colorama baker
 ```
 * Over FTP/SFTP
     * copy all mp3 to `/home/pi/src/mp3`

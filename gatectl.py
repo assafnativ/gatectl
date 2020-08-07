@@ -15,29 +15,33 @@ import traceback
 import re
 from datetime import datetime
 from tendo import singleton
+import telepot
+from past.builtins import execfile
 import RPi.GPIO as GPIO
 
-GSM_PWR_PIN = 7
-#GSM_PWR_PIN = 31 # SIM7600X
-GSM_SERIAL_DEV = "/dev/ttyUSB0"
-#GSM_SERIAL_DEV = "/dev/ttyS0" # SIM7600X
-GPIO_GATE_UP    = 36
-GPIO_GATE_DOWN  = 38 # Not in use
-GPIO_GATE_HOLD  = 40 # Not in use
-
-MP3_PLAYER = 'mpg321'
-curent_datetime_str = datetime.now().strftime("%Y%m%d_%I%M")
-LOG_FILE_NAME = "logs/ctl_%s.log" % curent_datetime_str
-OPERATION_LOG = "logs/operation_%s.log"
-PING_INTERVAL = 60 * 2
-MAX_FAILS_IN_A_ROW = 4
-
-GATEUP_TRIGGER_FILE = 'GATEUP'
-KILL_FILE = 'KILLAPP'
-
-MUST_EXITS_USB = [b'148f:7601', b'0403:6001']
-
-MAX_LOG_FILE_SIZE = 1024 * 1024 * 100
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+configs = {}
+execfile('config.py', configs)
+EXPECTED_CONFIGURATIONS = [
+        'GSM_PWR_PIN',
+        'GSM_SERIAL_DEV',
+        'GPIO_GATE_UP',
+        'MP3_PLAYER',
+        'LOG_FILE_NAME',
+        'OPERATION_LOG',
+        'PING_INTERVAL',
+        'MAX_FAILS_IN_A_ROW',
+        'GATEUP_TRIGGER_FILE',
+        'KILL_FILE',
+        'MUST_EXITS_USB',
+        'MAX_LOG_FILE_SIZE',
+        'TELEGRAM_BOT_TOKEN',
+        'TELEGRAM_LAST_MSG_FILE',
+        'TELEGRAM_CHECK_INTERVAL',
+        'OPEN_GATE_WORDS_LIST']
+for config_name in EXPECTED_CONFIGURATIONS:
+    assert config_name in configs, "%s configuration is missing in config file" % config_name
+    globals()[config_name] = configs[config_name]
 
 log_file = None
 def logPrint(text, is_verbose=True):
@@ -64,16 +68,12 @@ def safeOpenAppend(fileName):
 
 
 class GateCtl(object):
-    def __init__(self, up_gpio, down_gpio, hold_gpio, verbose=False):
+    def __init__(self, up_gpio, verbose=False):
         logPrint("Starting GateCtl")
         GPIO.setmode(GPIO.BOARD)
         GPIO.setup(up_gpio, GPIO.IN)
-        GPIO.setup(down_gpio, GPIO.IN)
-        GPIO.setup(hold_gpio, GPIO.IN)
         self.verbose = verbose
         self.up_gpio = up_gpio
-        self.down_gpio = down_gpio
-        self.hold_gpio = hold_gpio
 
     def close(self):
         GPIO.cleanup()
@@ -95,15 +95,6 @@ class GateCtl(object):
     def up(self):
         logPrint(colors.green("Gate up!"))
         self.oprate_pin(self.up_gpio, False)
-
-    def down(self):
-        logPrint(colors.red("Gate down!"))
-        self.oprate_pin(self.down_gpio, False)
-
-    def hold(self, t):
-        logPrint(colors.yellow("Gate hold it!"))
-        self.oprate_pin(self.hold_gpio, True)
-        logPrint(colors.yellow("Release"))
 
 class GSMHat(object):
     def __init__(self, verbose=False):
@@ -172,7 +163,7 @@ class GSMHat(object):
             except:
                 continue
             logPrint("%d: %s sent: %s (%s)" % (smsId, smsSender, l, msg))
-            messages.append((smsId, smsSender, msg))
+            messages.append((smsSender, msg))
         # Delete all stored SMS
         self.sendCmd(b'AT+CMGDA="DEL ALL"')
         deleteResult = self.recv()
@@ -216,13 +207,60 @@ def playMusic(fname):
     else:
         runInBackground(cmd)
 
-class GateCtlOverGSM(object):
+class TelegramBot(object):
+    def __init__(self, token, lastMsgFileName):
+        self.lastMsgId = 0
+        self.lastMsgFileName = lastMsgFileName
+        if os.path.isfile(lastMsgFileName):
+            with open(lastMsgFileName, 'r') as lastMsgFile:
+                self.lastMsgId = int(lastMsgFile.read())
+        self.bot = telepot.Bot(token)
+        try:
+            myDetails = self.bot.getMe()
+            logPrint(colors.blue(repr(myDetails)))
+        except:
+            logPrint('No internet / Telegram is down')
+
+    def getMessages(self):
+        messages = None
+        try:
+            messages = self.bot.getUpdates(self.lastMsgId)
+        except:
+            return []
+        result = []
+        lastId = self.lastMsgId
+        for msg in messages:
+            lastId = max(lastId, int(msg['update_id'])+1)
+            if 'message' not in msg:
+                continue
+            content = msg['message']
+            sender = content.get('from', {}).get('username', None)
+            text = content.get('text', None)
+            if sender and text:
+                result.append((sender, text))
+        if self.lastMsgId < lastId:
+            self.lastMsgId = lastId
+            with open(self.lastMsgFileName, 'w') as lastMsgFile:
+                lastMsgFile.write(str(lastId))
+        return result
+
+@baker.command
+def read_telegram_messages():
+    telegramBot = TelegramBot(TELEGRAM_BOT_TOKEN, TELEGRAM_LAST_MSG_FILE)
+    for sender, text in telegramBot.getMessages():
+        print("%s sent: %s" % (sender, text))
+
+class GateControl(object):
     def __init__(self, verbose=False):
-        print("Starting GateCtlOverGSM")
+        print("Starting GateControl")
         self.verbose = verbose
-        self.gateCtl = GateCtl(GPIO_GATE_UP, GPIO_GATE_DOWN, GPIO_GATE_HOLD, verbose=verbose)
+        self.gateCtl = GateCtl(GPIO_GATE_UP, verbose=verbose)
         self.gsm = GSMHat(verbose=verbose)
+        self.telegramBot = None
+        if TELEGRAM_BOT_TOKEN:
+            self.telegramBot = TelegramBot(TELEGRAM_BOT_TOKEN, TELEGRAM_LAST_MSG_FILE)
         self.lastPing = time.time()
+        self.lastTelegramCheck = time.time()
 
     def __enter__(self):
         return self
@@ -242,6 +280,27 @@ class GateCtlOverGSM(object):
         with open(operationLog, "ab") as log:
             log.write(time.ctime().encode('utf8') + msg)
 
+    def hasGateAccess(self, userId, whiteListFileName, isPhone):
+        logPrint("Validating %r with whitelist %s (%r)" % (userId, whiteListFileName, isPhone))
+        whitelist = []
+        userId = userId.strip()
+        if isPhone:
+            userId = userId.replace(b'-', b'').replace(b' ', b'').replace(b'.', b'')
+        with open(whiteListFileName, 'rb') as whiteListFile:
+            whitelist.extend(whiteListFile.read().split())
+        if userId in whitelist:
+            return True
+        if isPhone:
+            if (b'+972' + userId[1:]) in whitelist:
+                return True
+            if (b'972' + userId[1:]) in whitelist:
+                return True
+            if userId.startswith(b'+972') and (b'0' + userId[4:]) in whitelist:
+                return True
+            if userId.startswith(b'972') and (b'0' + userId[3:]) in whitelist:
+                return True
+        return False
+
     def answerCall(self, data):
         call_details = data.split()
         callerInfo = call_details[1]
@@ -249,11 +308,8 @@ class GateCtlOverGSM(object):
             return False
         callerId = callerInfo.split(b',')[0].replace(b'"', b'')
         logPrint("%r is calling" % callerId)
-        whitelist = open('whitelist.txt', 'rb').read()
-        whitelist = whitelist.split()
-        isAllowedIn = False
-        if callerId in whitelist or (b'+972' + callerId[1:]) in whitelist:
-            isAllowedIn = True
+        isAllowedIn = self.hasGateAccess(callerId, 'whitelist.txt', True)
+        if isAllowedIn:
             self.gateUp()
         self.writeToOperationLog(b'\tCall:\t' + callerId + b'\t%r\n' % isAllowedIn)
         return isAllowedIn
@@ -261,21 +317,40 @@ class GateCtlOverGSM(object):
     def gateUp(self):
         self.gateCtl.up()
 
-    def handleSMS(self, msgs):
-        for _, smsSender, msg in msgs:
+    def readAndHandleSMS(self):
+        self.handleMessages(self.gsm.readSMS(), 'whitelist.txt', True)
+
+    def handleMessages(self, msgs, whitelist, isPhone):
+        for sender, msg in msgs:
+            msg = msg.strip()
+            sender_utf8 = sender.encode('utf8')
+            got_access = False
+            played = False
+            command = OPEN_GATE_WORDS_LIST.get(msg, None)
+            if command:
+                print("Got %s command" % command)
+            if 'up' == command:
+                if self.hasGateAccess(sender_utf8, whitelist, isPhone):
+                    got_access = True
+                    self.gateUp()
+            elif 'reboot' == command:
+                reboot_system()
+            elif None != command:
+                logPrint("Unknown command %s" % command)
+            else:
+                for fname in os.listdir('./mp3/'):
+                    if not fname.endswith('.mp3'):
+                        continue
+                    if fname.startswith(msg) or msg.startswith(fname[:-4]):
+                        playMusic('./mp3/%s' % fname)
+                        played = True
+                        break
             self.writeToOperationLog( \
-                b'\tSMS:\t' + smsSender.encode('utf8') + \
-                b'\t%s\n' % msg.encode('utf8', errors='ignore'))
-            for fname in os.listdir('./mp3/'):
-                if not fname.endswith('.mp3'):
-                    continue
-                if fname.startswith(msg) or msg.startswith(fname[:-4]):
-                    playMusic('./mp3/%s' % fname)
-                    break
+                b'\tMsg:\t%s\t%s\t%r\t%r\n' % (sender_utf8, msg.encode('utf8', errors='ignore'), got_access, played))
 
     def resetIfNeeded(self):
         if self.gsm.pwrOnIfNeeded():
-            self.handleSMS(self.gsm.readSMS())
+            self.readAndHandleSMS()
 
     def mainLoop(self):
         while True:
@@ -287,7 +362,7 @@ class GateCtlOverGSM(object):
                 if l.startswith(b'+CLIP:'):
                     self.answerCall(l)
                 if l.startswith(b'+CMTI:'):
-                    self.handleSMS(self.gsm.readSMS())
+                    self.readAndHandleSMS()
                 if b"POWER DOWN" in l:
                     time.sleep(4)
                     self.resetIfNeeded()
@@ -298,11 +373,14 @@ class GateCtlOverGSM(object):
                 os.unlink(KILL_FILE)
                 logPrint(colors.magenta("KTHXBYE"))
                 return False
+            if self.telegramBot and (TELEGRAM_CHECK_INTERVAL < (time.time() - self.lastTelegramCheck)):
+                self.lastTelegramCheck = time.time()
+                self.handleMessages(self.telegramBot.getMessages(), 'telegram_whitelist.txt', False)
             if PING_INTERVAL < (time.time() - self.lastPing):
                 logPrint("Pi temperature is %f" % get_pi_temperature())
                 self.resetIfNeeded()
-                self.lastPing = time.time()
                 validate_usb()
+                self.lastPing = time.time()
 
 @baker.command
 def kill_process_by_name(target):
@@ -344,7 +422,6 @@ def reboot_system():
 @baker.command
 def run(verbose=False):
     me = singleton.SingleInstance()
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))
     logPrint("My PID is %d" % os.getpid())
     playMusic('ping.mp3')
     logPrint(colors.blue("Starting!"))
@@ -353,8 +430,8 @@ def run(verbose=False):
     keepRunning = True
     while keepRunning:
         try:
-            with GateCtlOverGSM(verbose=verbose) as gateCtlOverGSM:
-                keepRunning = gateCtlOverGSM.mainLoop()
+            with GateControl(verbose=verbose) as gateControl:
+                keepRunning = gateControl.mainLoop()
         except:
             last_error = traceback.format_exc()
             logPrint(colors.bold(colors.red(last_error)))

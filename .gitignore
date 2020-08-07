@@ -136,3 +136,5 @@ dmypy.json
 # Personal files
 /logs/*
 whitelist.txt
+telegram_*
+config.py

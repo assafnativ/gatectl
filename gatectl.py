@@ -236,6 +236,8 @@ class TelegramBot(object):
             content = msg['message']
             sender = content.get('from', {}).get('username', None)
             text = content.get('text', None)
+            if text:
+                text = text[:100]
             if sender and text:
                 result.append((sender, text))
         if self.lastMsgId < lastId:

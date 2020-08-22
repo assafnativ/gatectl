@@ -283,7 +283,7 @@ class GateControl(object):
             log.write(time.ctime().encode('utf8') + msg)
 
     def hasGateAccess(self, userId, whiteListFileName, isPhone):
-        logPrint("Validating %r with whitelist %s (%r)" % (userId, whiteListFileName, isPhone))
+        logPrint("Validating %r with whitelist %s (Is phone: %r)" % (userId, whiteListFileName, isPhone))
         whitelist = []
         userId = userId.strip()
         if isPhone:
@@ -313,6 +313,8 @@ class GateControl(object):
         isAllowedIn = self.hasGateAccess(callerId, 'whitelist.txt', True)
         if isAllowedIn:
             self.gateUp()
+        else:
+            logPrint(colors.red("No access to %r" % callerId))
         self.writeToOperationLog(b'\tCall:\t' + callerId + b'\t%r\n' % isAllowedIn)
         return isAllowedIn
 
@@ -335,6 +337,8 @@ class GateControl(object):
                 if self.hasGateAccess(sender_utf8, whitelist, isPhone):
                     got_access = True
                     self.gateUp()
+                else:
+                    logPrint(colors.red("No access to %r" % sender_utf8))
             elif 'reboot' == command:
                 reboot_system()
             elif None != command:

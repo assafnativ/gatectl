@@ -414,7 +414,7 @@ def get_pi_temperature():
 @baker.command
 def validate_usb():
     stdout, _ = subprocess.Popen(['lsusb'], stdout=subprocess.PIPE).communicate()
-    for usb_id in MUST_EXITS_USB:
+    for usb_id in MUST_EXISTS_USB:
         if usb_id not in stdout:
             logPrint(colors.red("USB failure!"))
             reboot_system()

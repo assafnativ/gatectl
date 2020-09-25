@@ -99,18 +99,32 @@ class GateCtl(object):
 class GSMHat(object):
     def __init__(self, verbose=False):
         logPrint("Starting GSMHat")
-        GPIO.setup(GSM_PWR_PIN, GPIO.OUT)
+        self.initPwrPin()
         self.verbose = verbose
         self.serial = serial.Serial(GSM_SERIAL_DEV, 115200, timeout=1)
         self.pwrOnIfNeeded()
+        self.deviceId = self.getDeviceId()[0]
         logPrint("Connected to GSM hat")
         self.recv()
+
+    def initPwrPin(self):
+        if not GSM_PWR_PIN:
+            return
+        GPIO.setup(GSM_PWR_PIN, GPIO.OUT)
+        GPIO.output(GSM_PWR_PIN, GPIO.HIGH)
+
+    def getDeviceId(self):
+        self.sendCmd(b"ATI")
+        id_data = self.normalizedRecv()
+        return id_data[:3]
 
     def pwrOnIfNeeded(self):
         if self.pingDevice():
             return False
         # Try to power up the GSM Hat
         logPrint("Need to power up GSM hat")
+        if None == GSM_PWR_PIN:
+            return False
         self.pwrSwitch()
         logPrint("Done - trying to ping GSM hat")
         if not self.pingDevice():
@@ -128,6 +142,9 @@ class GSMHat(object):
         assert b"OK" in data, "Cant setup SMS to TEXT mode"
 
     def pwrSwitch(self):
+        if not GSM_PWR_PIN:
+            logPrint("No power pin")
+            return
         GPIO.output(GSM_PWR_PIN, GPIO.LOW)
         time.sleep(4)
         GPIO.output(GSM_PWR_PIN, GPIO.HIGH)
@@ -153,6 +170,7 @@ class GSMHat(object):
             if l.startswith(b'ERROR'):
                 break
             if l.startswith(b'+CMGL: '):
+                # +CMGL: 6,"REC UNREAD","002B003900370032003500300035003200330037003800300039",,"" 0054006500730074
                 smsInfo = l[len(b'+CMGL: '):].split(b',')
                 smsId = int(smsInfo[0])
                 smsSender = smsInfo[2].replace(b'"', b'')
@@ -166,10 +184,14 @@ class GSMHat(object):
             messages.append((smsSender, msg))
         # Delete all stored SMS
         self.sendCmd(b'AT+CMGDA="DEL ALL"')
+        self.sendCmd(b'AT+CMGD=0,4')
         deleteResult = self.recv()
         if self.verbose:
             logPrint(colors.blue(deleteResult.decode('utf8')))
         return messages
+
+    def hangUpCall(self):
+        self.sendCmd(b'AT+CHUP')
 
     def normalizedRecv(self):
         return [x.strip() for x in self.recv().replace(b'\r\n', b'\n').split(b'\n') if x.strip()]
@@ -304,12 +326,17 @@ class GateControl(object):
                 return True
         return False
 
-    def answerCall(self, data):
+    def answerCallClip(self, data):
         call_details = data.split()
         callerInfo = call_details[1]
         if callerInfo.count(b',') < 1:
             return False
         callerId = callerInfo.split(b',')[0].replace(b'"', b'')
+        if len(callerId) < 3:
+            return False
+        return self.answerCall(callerId)
+
+    def answerCall(self, callerId):
         logPrint("%r is calling" % callerId)
         isAllowedIn = self.hasGateAccess(callerId, 'whitelist.txt', True)
         if isAllowedIn:
@@ -317,6 +344,8 @@ class GateControl(object):
         else:
             logPrint(colors.red("No access to %r" % callerId))
         self.writeToOperationLog(b'\tCall:\t' + callerId + b'\t%r\n' % isAllowedIn)
+        # We do not answer calls, just using the caller id
+        self.gsm.hangUpCall()
         return isAllowedIn
 
     def gateUp(self):
@@ -359,20 +388,41 @@ class GateControl(object):
         if self.gsm.pwrOnIfNeeded():
             self.readAndHandleSMS()
 
+    def getCallingNumber(self):
+        self.gsm.sendCmd(b'AT+CLCC')
+        lines = self.gsm.normalizedRecv()
+        for l in lines:
+            if len(l) < 10:
+                continue
+            info = l[len('+CLCC: '):].split(b',')
+            if 0 != int(info[3]):
+                # Not a voice call
+                continue
+            number = info[5].replace(b'"', b'')
+            if 4 < len(number):
+                return number
+            else:
+                print("Parsing error: %r" % l)
+        return None
+
     def mainLoop(self):
         while True:
             time.sleep(0.1)
-            data = self.gsm.recv()
-            lines = data.replace(b'\r\n', b'\n').split(b'\n')
+            lines = self.gsm.normalizedRecv()
             for l in lines:
                 l = l.strip()
                 if l.startswith(b'+CLIP:'):
-                    self.answerCall(l)
+                    self.answerCallClip(l)
+                if l.startswith(b'RING'):
+                    callingNumber = self.getCallingNumber()
+                    if callingNumber:
+                        self.answerCall(callingNumber)
                 if l.startswith(b'+CMTI:'):
                     self.readAndHandleSMS()
                 if b"POWER DOWN" in l:
                     time.sleep(4)
                     self.resetIfNeeded()
+
             if os.path.isfile(GATEUP_TRIGGER_FILE):
                 os.unlink(GATEUP_TRIGGER_FILE)
                 self.gateUp()
@@ -417,6 +467,7 @@ def validate_usb():
     for usb_id in MUST_EXISTS_USB:
         if usb_id not in stdout:
             logPrint(colors.red("USB failure!"))
+            time.sleep(20)
             reboot_system()
             return True
     return False
@@ -442,7 +493,7 @@ def run(verbose=False):
         except:
             last_error = traceback.format_exc()
             logPrint(colors.bold(colors.red(last_error)))
-            time.sleep(5)
+            time.sleep(2)
             if 60 < (time.time() - lastFail):
                 failCount = 1
             else:

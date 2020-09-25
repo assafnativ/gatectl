@@ -240,6 +240,7 @@ class TelegramBot(object):
                 text = text[:100]
             if sender and text:
                 result.append((sender, text))
+                logPrint("%s sent telegram message: %s" % (colors.yellow(sender), colors.yellow(text)))
         if self.lastMsgId < lastId:
             self.lastMsgId = lastId
             with open(self.lastMsgFileName, 'w') as lastMsgFile:

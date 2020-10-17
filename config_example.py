@@ -43,3 +43,9 @@ OPEN_GATE_WORDS_LIST = {
         'Reboot' : 'reboot',
         'restart' : 'reboot',
         'Restart' : 'reboot'}
+
+RF_GPIO = 17
+RF_PROTO = 1
+RF_PULSELENGTH = (330, 340)
+RF_CODE = (2040, 2050)
+

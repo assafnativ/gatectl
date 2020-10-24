@@ -25,6 +25,7 @@ sudo ln -s `which python3` /usr/bin/python
 sudo python -m pip install --upgrade pip
 sudo python -m pip install tendo ansicolors colorama baker future telepot pyserial rpi-rf
 ```
+Comment out the line "GPIO.setmode(GPIO.BCM)" - in the file /usr/local/lib/python3.7/dist-packages/rpi_rf/rpi_rf.py
 * Over FTP/SFTP
     * copy all mp3 to `/home/pi/src/mp3`
     * copy `ping.mp3`, `gatectl.py`, `gatectl.sh` and `whitelist.txt` to `/home/pi/src`

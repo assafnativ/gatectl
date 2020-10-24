@@ -5,7 +5,7 @@ GSM_PWR_PIN = 7
 GSM_SERIAL_DEV = "/dev/ttyUSB0"
 #GSM_SERIAL_DEV = "/dev/ttyS0" # SIM7600X
 GPIO_GATE_UP    = 36
-GPIO_GATE_DOWN  = 38 # Not in use
+GPIO_GATE_POWER = 38
 GPIO_GATE_HOLD  = 40 # Not in use
 
 MP3_PLAYER = 'mpg321'
@@ -14,6 +14,7 @@ LOG_FILE_NAME = "logs/ctl_%s.log" % curent_datetime_str
 OPERATION_LOG = "logs/operation_%s.log"
 PING_INTERVAL = 60 * 2
 MAX_FAILS_IN_A_ROW = 4
+MAX_USB_FAIL_COUNT = 20
 
 GATEUP_TRIGGER_FILE = 'GATEUP'
 KILL_FILE = 'KILLAPP'
@@ -42,7 +43,11 @@ OPEN_GATE_WORDS_LIST = {
         'reboot' : 'reboot',
         'Reboot' : 'reboot',
         'restart' : 'reboot',
-        'Restart' : 'reboot'}
+        'Restart' : 'reboot',
+        'lock' : 'lock',
+        'unlock' : 'unlock',
+        'gate reset' : 'gatereset',
+        'Gate reset' : 'gatereset'}
 
 RF_GPIO = 17
 RF_PROTO = 1

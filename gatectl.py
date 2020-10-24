@@ -27,6 +27,7 @@ EXPECTED_CONFIGURATIONS = [
         'GSM_PWR_PIN',
         'GSM_SERIAL_DEV',
         'GPIO_GATE_UP',
+        'GPIO_GATE_POWER',
         'MP3_PLAYER',
         'LOG_FILE_NAME',
         'OPERATION_LOG',
@@ -74,23 +75,31 @@ def safeOpenAppend(fileName):
 
 
 class GateMachine(object):
-    def __init__(self, up_gpio, verbose=False):
+    def __init__(self, up_gpio, power_gpio, verbose=False):
         logPrint("Starting GateMachine")
         GPIO.setmode(GPIO.BOARD)
         GPIO.setup(up_gpio, GPIO.IN)
+        GPIO.setup(power_gpio, GPIO.IN)
         self.verbose = verbose
         self.up_gpio = up_gpio
+        self.power_gpio = power_gpio
 
     def close(self):
         GPIO.cleanup()
 
-    def oprate_pin(self, pin_number, active_low=False):
+    def triggerPin(self, pin_number, active_low=False):
+        self.activatePin(pin_number, active_low)
+        time.sleep(2)
+        self.deactivatePin(pin_number, active_low)
+
+    def activatePin(self, pin_number, active_low=False):
         GPIO.setup(pin_number, GPIO.OUT)
         if active_low:
             GPIO.output(pin_number, GPIO.LOW)
         else:
             GPIO.output(pin_number, GPIO.HIGH)
-        time.sleep(2)
+
+    def deactivatePin(self, pin_number, active_low=False):
         if active_low:
             GPIO.output(pin_number, GPIO.HIGH)
         else:
@@ -100,7 +109,23 @@ class GateMachine(object):
 
     def up(self):
         logPrint(colors.green("Gate up!"))
-        self.oprate_pin(self.up_gpio, False)
+        self.triggerPin(self.up_gpio, False)
+
+    def holdDown(self, active_low=False):
+        logPrint(colors.red("Gate power off lock!"))
+        self.activatePin(self.power_gpio, active_low=active_low)
+
+    def releaseDown(self, active_low=False):
+        logPrint(colors.yellow("Gate power unlock!"))
+        self.deactivatePin(self.power_gpio, active_low=active_low)
+
+    def resetGate(self, active_low=False):
+        logPrint(colors.yellow("Reset gate control"))
+        self.activatePin(self.power_gpio, active_low=active_low)
+        logPrint("Gate power on")
+        time.sleep(4)
+        self.deactivatePin(self.power_gpio, active_low=active_low)
+        logPrint("Gate power off")
 
 class GSMHat(object):
     def __init__(self, verbose=False):
@@ -279,28 +304,28 @@ class TelegramBot(object):
 def read_telegram_messages():
     telegramBot = TelegramBot(TELEGRAM_BOT_TOKEN, TELEGRAM_LAST_MSG_FILE)
     for sender, text in telegramBot.getMessages():
-        print("%s sent: %s" % (sender, text))
+        logPrint("%s sent: %s" % (sender, text))
 
 class RFControl(object):
     def __init__(self, rf_gpio, proto, code, pulselength):
         self.rf_gpio = rf_gpio
         self.dev = None
         if not rf_gpio:
-            print("RF control is disabled")
+            logPrint("RF control is disabled")
             return
         self.proto = proto
-        self.code_min, self.code_max = code
-        self.pulse_min, self.pulse_max = pulselength
+        self.code_ranges = code
+        self.pulse_ranges = pulselength
         self.last_timestamp = None
         self.dev = RFDevice(self.rf_gpio)
         self.dev.enable_rx()
         if self.proto:
-            print("RF control ready - Waiting for protcol %x Code (%x-%x) Pulse length(%x-%x)" %
-                    (self.proto, self.code_min, self.code_max, self.pulse_min, self.pulse_max))
+            logPrint("RF control ready - Waiting for protcol %x Code (%r) Pulse length(%r)" %
+                    (self.proto, self.code_ranges, self.pulse_ranges))
 
     def cleanup(self):
         if self.dev:
-            print("RF cleanup")
+            logPrint("RF cleanup")
             self.dev.cleanup()
             self.dev = None
 
@@ -315,27 +340,33 @@ class RFControl(object):
         pulselength = self.dev.rx_pulselength
         if None != self.proto and proto != self.proto:
             return False
-        print("Got RF signal: code %d pulselength %d" % (code, pulselength))
-        if not (self.pulse_min <= pulselength <= self.pulse_max):
+        logPrint("Got RF signal: code %d pulselength %d" % (code, pulselength))
+        for pulse_min, pulse_max in self.pulse_ranges:
+            if pulse_min <= pulselength <= pulse_max:
+                break
+        else:
             return False
-        if not (self.code_min <= code <= self.code_max):
+        for code_min, code_max in self.code_ranges:
+            if code_min <= code <= code_max:
+                break
+        else:
             return False
         return True
 
 @baker.command
 def rf_test(gpio):
     gpio = int(gpio)
-    rfCtl = RFControl(gpio, None, (0, 1000), (0, 10000))
-    print("Starting loop")
+    rfCtl = RFControl(gpio, None, [(0, 1000)], [(0, 10000)])
+    logPrint("Starting loop")
     while True:
         rfCtl.should_open_the_gate()
         time.sleep(0.1)
 
 class GateControl(object):
     def __init__(self, verbose=False):
-        print("Starting GateControl")
+        logPrint("Starting GateControl")
         self.verbose = verbose
-        self.gateMachine = GateMachine(GPIO_GATE_UP, verbose=verbose)
+        self.gateMachine = GateMachine(GPIO_GATE_UP, GPIO_GATE_POWER, verbose=verbose)
         self.gsm = GSMHat(verbose=verbose)
         self.telegramBot = None
         if TELEGRAM_BOT_TOKEN:
@@ -344,11 +375,15 @@ class GateControl(object):
         self.lastTelegramCheck = time.time()
         self.rfCtl = RFControl(RF_GPIO, RF_PROTO, RF_CODE, RF_PULSELENGTH)
         self.usbFailCount = 0
+        self.isLocked = False
 
     def __enter__(self):
         return self
 
     def __exit__(self, t, value, tb):
+        if self.isLocked:
+            self.GateMachine.releaseDown()
+        self.isLocked = False
         self.gsm.close()
         self.gsm = None
         self.gateMachine.close()
@@ -407,7 +442,17 @@ class GateControl(object):
         return isAllowedIn
 
     def gateUp(self):
+        if self.isLocked:
+            return
         self.gateMachine.up()
+
+    def gateLock(self):
+        self.isLocked = True
+        self.gateMachine.holdDown()
+
+    def gateUnlock(self):
+        self.isLocked = False
+        self.gateMachine.releaseDown()
 
     def readAndHandleSMS(self):
         self.handleMessages(self.gsm.readSMS(), 'whitelist.txt', True)
@@ -420,7 +465,7 @@ class GateControl(object):
             played = False
             command = OPEN_GATE_WORDS_LIST.get(msg, None)
             if command:
-                print("Got %s command" % command)
+                logPrint("Got %s command" % command)
             if 'up' == command:
                 if self.hasGateAccess(sender_utf8, whitelist, isPhone):
                     got_access = True
@@ -429,6 +474,15 @@ class GateControl(object):
                     logPrint(colors.red("No access to %r" % sender_utf8))
             elif 'reboot' == command:
                 reboot_system()
+            elif 'lock' == command:
+                if self.hasGateAccess(sender_utf8, whitelist, isPhone):
+                    self.gateLock()
+            elif 'unlock' == command:
+                if self.hasGateAccess(sender_utf8, whitelist, isPhone):
+                    self.gateUnlock()
+            elif 'gatereset' == command:
+                if self.hasGateAccess(sender_utf8, whitelist, isPhone):
+                    self.gateMachine.resetGate()
             elif None != command:
                 logPrint("Unknown command %s" % command)
             else:
@@ -460,7 +514,7 @@ class GateControl(object):
             if 4 < len(number):
                 return number
             else:
-                print("Parsing error: %r" % l)
+                logPrint("Parsing error: %r" % l)
         return None
 
     def mainLoop(self):
@@ -519,7 +573,7 @@ def kill_process_by_name(target):
         pid = int(l.split()[0])
         logPrint(colors.red("Killing %d with command line: '%s'" % (pid, l.split()[3])))
         os.kill(pid, signal.SIGKILL)
-        time.sleep(1)
+        time.sleep(0.1)
         logPrint(colors.red("Killed %d" % pid))
 
 @baker.command
@@ -541,7 +595,7 @@ def validate_usb():
 
 @baker.command
 def reboot_system():
-    print(colors.red("Rebooting!!!"))
+    logPrint(colors.red("Rebooting!!!"))
     runInBackground("reboot")
 
 @baker.command
@@ -565,7 +619,7 @@ def run(verbose=False):
                 failCount = 1
             else:
                 failCount += 1
-            print("System error %d" % failCount)
+            logPrint("System error %d" % failCount)
             lastFail = time.time()
             if MAX_FAILS_IN_A_ROW < failCount:
                 reboot_system()

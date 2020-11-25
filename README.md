@@ -23,7 +23,7 @@ sudo apt install espeak mpg321 python3-pip vim -y
 sudo rm `which python`
 sudo ln -s `which python3` /usr/bin/python
 sudo python -m pip install --upgrade pip
-sudo python -m pip install tendo ansicolors colorama baker future telepot
+sudo python -m pip install tendo ansicolors colorama baker future telepot pyserial rpi-rf
 ```
 * Over FTP/SFTP
     * copy all mp3 to `/home/pi/src/mp3`

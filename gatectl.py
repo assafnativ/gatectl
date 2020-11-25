@@ -18,6 +18,7 @@ from tendo import singleton
 import telepot
 from past.builtins import execfile
 import RPi.GPIO as GPIO
+from rpi_rf import RFDevice
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 configs = {}
@@ -38,7 +39,10 @@ EXPECTED_CONFIGURATIONS = [
         'TELEGRAM_BOT_TOKEN',
         'TELEGRAM_LAST_MSG_FILE',
         'TELEGRAM_CHECK_INTERVAL',
-        'OPEN_GATE_WORDS_LIST']
+        'OPEN_GATE_WORDS_LIST',
+        'RF_PROTO',
+        'RF_PULSELENGTH',
+        'RF_CODE']
 for config_name in EXPECTED_CONFIGURATIONS:
     assert config_name in configs, "%s configuration is missing in config file" % config_name
     globals()[config_name] = configs[config_name]
@@ -67,9 +71,9 @@ def safeOpenAppend(fileName):
     return open(fileName, 'a')
 
 
-class GateCtl(object):
+class GateMachine(object):
     def __init__(self, up_gpio, verbose=False):
-        logPrint("Starting GateCtl")
+        logPrint("Starting GateMachine")
         GPIO.setmode(GPIO.BOARD)
         GPIO.setup(up_gpio, GPIO.IN)
         self.verbose = verbose
@@ -275,17 +279,68 @@ def read_telegram_messages():
     for sender, text in telegramBot.getMessages():
         print("%s sent: %s" % (sender, text))
 
+class RFControl(object):
+    def __init__(self, rf_gpio, proto, code, pulselength):
+        self.rf_gpio = rf_gpio
+        self.dev = None
+        if not rf_gpio:
+            print("RF control is disabled")
+            return
+        self.proto = proto
+        self.code_min, self.code_max = code
+        self.pulse_min, self.pulse_max = pulselength
+        self.last_timestamp = None
+        self.dev = RFDevice(self.rf_gpio)
+        self.dev.enable_rx()
+        if self.proto:
+            print("RF control ready - Waiting for protcol %x Code (%x-%x) Pulse length(%x-%x)" %
+                    (self.proto, self.code_min, self.code_max, self.pulse_min, self.pulse_max))
+
+    def cleanup(self):
+        if self.dev:
+            print("RF cleanup")
+            self.dev.cleanup()
+            self.dev = None
+
+    def should_open_the_gate(self):
+        if not self.dev:
+            return False
+        if self.last_timestamp == self.dev.rx_code_timestamp:
+            return False
+        self.last_timestamp = self.dev.rx_code_timestamp
+        proto       = self.dev.rx_proto
+        code        = self.dev.rx_code
+        pulselength = self.dev.rx_pulselength
+        if None != self.proto and proto != self.proto:
+            return False
+        print("Got RF signal: code %d pulselength %d" % (code, pulselength))
+        if not (self.pulse_min <= pulselength <= self.pulse_max):
+            return False
+        if not (self.code_min <= code <= self.code_max):
+            return False
+        return True
+
+@baker.command
+def rf_test(gpio):
+    gpio = int(gpio)
+    rfCtl = RFControl(gpio, None, (0, 1000), (0, 10000))
+    print("Starting loop")
+    while True:
+        rfCtl.should_open_the_gate()
+        time.sleep(0.1)
+
 class GateControl(object):
     def __init__(self, verbose=False):
         print("Starting GateControl")
         self.verbose = verbose
-        self.gateCtl = GateCtl(GPIO_GATE_UP, verbose=verbose)
+        self.gateMachine = GateMachine(GPIO_GATE_UP, verbose=verbose)
         self.gsm = GSMHat(verbose=verbose)
         self.telegramBot = None
         if TELEGRAM_BOT_TOKEN:
             self.telegramBot = TelegramBot(TELEGRAM_BOT_TOKEN, TELEGRAM_LAST_MSG_FILE)
         self.lastPing = time.time()
         self.lastTelegramCheck = time.time()
+        self.rfCtl = RFControl(RF_GPIO, RF_PROTO, RF_CODE, RF_PULSELENGTH)
 
     def __enter__(self):
         return self
@@ -293,8 +348,8 @@ class GateControl(object):
     def __exit__(self, t, value, tb):
         self.gsm.close()
         self.gsm = None
-        self.gateCtl.close()
-        self.gateCtl = None
+        self.gateMachine.close()
+        self.gateMachine = None
         if tb or value or t:
             trace = traceback.format_exc()
             logPrint(colors.red(trace))
@@ -349,7 +404,7 @@ class GateControl(object):
         return isAllowedIn
 
     def gateUp(self):
-        self.gateCtl.up()
+        self.gateMachine.up()
 
     def readAndHandleSMS(self):
         self.handleMessages(self.gsm.readSMS(), 'whitelist.txt', True)
@@ -407,7 +462,7 @@ class GateControl(object):
 
     def mainLoop(self):
         while True:
-            time.sleep(0.1)
+            time.sleep(0.05)
             lines = self.gsm.normalizedRecv()
             for l in lines:
                 l = l.strip()
@@ -438,6 +493,10 @@ class GateControl(object):
                 self.resetIfNeeded()
                 validate_usb()
                 self.lastPing = time.time()
+
+            if self.rfCtl.should_open_the_gate():
+                logPrint(colors.green("Gate up by RF remote control"))
+                self.gateUp()
 
 @baker.command
 def kill_process_by_name(target):

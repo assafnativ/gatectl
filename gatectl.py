@@ -34,12 +34,14 @@ EXPECTED_CONFIGURATIONS = [
         'MAX_FAILS_IN_A_ROW',
         'GATEUP_TRIGGER_FILE',
         'KILL_FILE',
-        'MUST_EXITS_USB',
+        'MUST_EXISTS_USB',
+        'MAX_USB_FAIL_COUNT',
         'MAX_LOG_FILE_SIZE',
         'TELEGRAM_BOT_TOKEN',
         'TELEGRAM_LAST_MSG_FILE',
         'TELEGRAM_CHECK_INTERVAL',
         'OPEN_GATE_WORDS_LIST',
+        'RF_GPIO',
         'RF_PROTO',
         'RF_PULSELENGTH',
         'RF_CODE']
@@ -341,6 +343,7 @@ class GateControl(object):
         self.lastPing = time.time()
         self.lastTelegramCheck = time.time()
         self.rfCtl = RFControl(RF_GPIO, RF_PROTO, RF_CODE, RF_PULSELENGTH)
+        self.usbFailCount = 0
 
     def __enter__(self):
         return self
@@ -491,7 +494,14 @@ class GateControl(object):
             if PING_INTERVAL < (time.time() - self.lastPing):
                 logPrint("Pi temperature is %f" % get_pi_temperature())
                 self.resetIfNeeded()
-                validate_usb()
+                if not validate_usb():
+                    self.usbFailCount += 1
+                    if MAX_USB_FAIL_COUNT < self.usbFailCount:
+                        logPrint(colors.red("Too many USB failures, rebooting!"))
+                        time.sleep(20)
+                        reboot_system()
+                else:
+                    self.usbFailCount = 0
                 self.lastPing = time.time()
 
             if self.rfCtl.should_open_the_gate():
@@ -525,11 +535,9 @@ def validate_usb():
     stdout, _ = subprocess.Popen(['lsusb'], stdout=subprocess.PIPE).communicate()
     for usb_id in MUST_EXISTS_USB:
         if usb_id not in stdout:
-            logPrint(colors.red("USB failure!"))
-            time.sleep(20)
-            reboot_system()
-            return True
-    return False
+            logPrint(colors.red("USB failure!- %r is missing" % usb_id))
+            return False
+    return True
 
 @baker.command
 def reboot_system():

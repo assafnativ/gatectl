@@ -135,8 +135,10 @@ dmypy.json
 
 # Personal files
 /logs/*
+/appengine/*
 whitelist.txt
 telegram_*
+cloud_*
 config.py
 config_ex25.py
 config_SIM808.py

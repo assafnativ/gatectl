@@ -27,6 +27,9 @@ TELEGRAM_BOT_TOKEN = ''
 TELEGRAM_LAST_MSG_FILE = 'telegram_last_msg_id.txt'
 TELEGRAM_CHECK_INTERVAL = 1
 
+CLOUD_URL = ''
+CLOUD_CHECK_INTERVAL = 3
+
 OPEN_GATE_WORDS_LIST = {
         'up' : 'up',
         'Up' : 'up',

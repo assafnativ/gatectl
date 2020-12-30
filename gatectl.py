@@ -13,6 +13,8 @@ import os
 import sys
 import traceback
 import re
+import urllib.request
+import threading
 from datetime import datetime
 from tendo import singleton
 import telepot
@@ -41,6 +43,8 @@ EXPECTED_CONFIGURATIONS = [
         'TELEGRAM_BOT_TOKEN',
         'TELEGRAM_LAST_MSG_FILE',
         'TELEGRAM_CHECK_INTERVAL',
+        'CLOUD_URL',
+        'CLOUD_CHECK_INTERVAL',
         'OPEN_GATE_WORDS_LIST',
         'RF_GPIO',
         'RF_PROTO',
@@ -373,6 +377,11 @@ class GateControl(object):
             self.telegramBot = TelegramBot(TELEGRAM_BOT_TOKEN, TELEGRAM_LAST_MSG_FILE)
         self.lastPing = time.time()
         self.lastTelegramCheck = time.time()
+        self.cloud = None
+        if CLOUD_URL:
+            self.cloud = Cloud(CLOUD_URL, CLOUD_CHECK_INTERVAL)
+        self.lastCloudCheck = time.time()
+        self.lastCloudLogin = None
         self.rfCtl = RFControl(RF_GPIO, RF_PROTO, RF_CODE, RF_PULSELENGTH)
         self.usbFailCount = 0
         self.isLocked = False
@@ -496,6 +505,26 @@ class GateControl(object):
             self.writeToOperationLog( \
                 b'\tMsg:\t%s\t%s\t%r\t%r\n' % (sender_utf8, msg.encode('utf8', errors='ignore'), got_access, played))
 
+    def handleCloud(self, last_login, whitelist):
+        if None == self.lastCloudLogin:
+            self.lastCloudLogin = last_login
+            logPrint("Last cloud login: %r|%r" % (self.lastCloudLogin[0], self.lastCloudLogin[1]))
+            return False
+        if b'|'.join(last_login) == b'|'.join(self.lastCloudLogin):
+            return False
+        self.lastCloudLogin = last_login
+        logPrint("New cloud login info: %r|%r" % (self.lastCloudLogin[0], self.lastCloudLogin[1]))
+        userId, timeStamp = last_login
+        got_access = self.hasGateAccess(userId, whitelist, False)
+        if got_access:
+            logPrint(colors.green("Cloud gate access by %r" % userId))
+            self.gateUp()
+        else:
+            logPrint(colors.red("Attempt to access gate from cloud by unauthorized user: %r" % userId))
+        self.writeToOperationLog( \
+            b'\tCloud:\t%s\t%r\t%r\n' % (userId, got_access, False))
+        return got_access
+
     def resetIfNeeded(self):
         if self.gsm.pwrOnIfNeeded():
             self.readAndHandleSMS()
@@ -545,6 +574,9 @@ class GateControl(object):
             if self.telegramBot and (TELEGRAM_CHECK_INTERVAL < (time.time() - self.lastTelegramCheck)):
                 self.lastTelegramCheck = time.time()
                 self.handleMessages(self.telegramBot.getMessages(), 'telegram_whitelist.txt', False)
+            if self.cloud and (CLOUD_CHECK_INTERVAL < (time.time() - self.lastCloudCheck)):
+                self.lastCloudCheck = time.time()
+                self.handleCloud(self.cloud.getLastLogin(), 'cloud_whitelist.txt')
             if PING_INTERVAL < (time.time() - self.lastPing):
                 logPrint("Pi temperature is %f" % get_pi_temperature())
                 self.resetIfNeeded()
@@ -554,6 +586,7 @@ class GateControl(object):
                         logPrint(colors.red("Too many USB failures, rebooting!"))
                         time.sleep(20)
                         reboot_system()
+                        return False
                 else:
                     self.usbFailCount = 0
                 self.lastPing = time.time()
@@ -593,24 +626,66 @@ def validate_usb():
             return False
     return True
 
+class Cloud(object):
+    def __init__(self, cloudURL, delay=None):
+        self.cloudURL = cloudURL
+        self.delay = delay or 1
+        self.lastLoginContainer = None
+        self.lastLoginLock = threading.Lock()
+        self.thread = threading.Thread(target=self.cloudThread)
+        self.thread.start()
+        time.sleep(self.delay)
+
+    def cloudThread(self):
+        global KEEP_RUNNING
+        while KEEP_RUNNING:
+            last_login = None
+            with urllib.request.urlopen(CLOUD_URL) as cloud:
+                last_login = cloud.read()
+            last_login = re.findall(b'Last login: (.*)\\|(.*)</p>', last_login)
+            #logPrint("Fetched cloud data: %r" % last_login)
+
+            self.lastLoginLock.acquire()
+            if not last_login or 1 != len(last_login) or 2 != len(last_login[0]):
+                self.lastLoginContainer = ('?', '?')
+            self.lastLoginContainer = (last_login[0][0], last_login[0][1])
+            self.lastLoginLock.release()
+            time.sleep(self.delay)
+
+    def getLastLogin(self):
+        self.lastLoginLock.acquire()
+        result = (self.lastLoginContainer[0], self.lastLoginContainer[1])
+        self.lastLoginLock.release()
+        return result
+
+@baker.command
+def fetch_cloud_login():
+    global KEEP_RUNNING
+    if not CLOUD_URL:
+        return b'?'
+    c = Cloud(CLOUD_URL)
+    logPrint(repr(c.getLastLogin()))
+    KEEP_RUNNING = False
+
 @baker.command
 def reboot_system():
     logPrint(colors.red("Rebooting!!!"))
     runInBackground("reboot")
 
+KEEP_RUNNING = True
 @baker.command
 def run(verbose=False):
+    global KEEP_RUNNING
     me = singleton.SingleInstance()
     logPrint("My PID is %d" % os.getpid())
     playMusic('ping.mp3')
     logPrint(colors.blue("Starting!"))
     lastFail = 0
     failCount = 0
-    keepRunning = True
-    while keepRunning:
+    while KEEP_RUNNING:
         try:
             with GateControl(verbose=verbose) as gateControl:
-                keepRunning = gateControl.mainLoop()
+                KEEP_RUNNING = gateControl.mainLoop()
         except:
             last_error = traceback.format_exc()
             logPrint(colors.bold(colors.red(last_error)))

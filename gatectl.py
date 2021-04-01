@@ -277,7 +277,7 @@ class TelegramBot(object):
     def getMessages(self):
         messages = None
         try:
-            messages = self.bot.getUpdates(self.lastMsgId)
+            messages = self.bot.getUpdates(self.lastMsgId, timeout=1)
         except:
             return []
         result = []

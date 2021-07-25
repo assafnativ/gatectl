@@ -105,9 +105,12 @@ def run():
 class GateControl(object):
     def __init__(self, cfg):
         logPrint("Starting GateControl")
-        self.telegramBotProcess = None
-        self.GSMHatProcess = None
-        self.RFCtlProcess = None
+        self.gateModules = [
+                (telegramBotRun, 'TelegramBot', 'telegramBotProcess'),
+                (GSMHatRun 'GSM', 'GSMHatProcess'),
+                (RFCtlRun, 'RF', 'RFCtlProcess')]
+        for _, _, var in self.gateModules:
+            setattr(self, var, None)
         self.gateMachine = GateMachine(cfg.GPIO_GATE_UP, cfg.GPIO_GATE_POWER)
         self.lastPing = time.time()
         self.usbFailCount = 0
@@ -228,29 +231,19 @@ class GateControl(object):
         return messages
 
     def createSubProcessesSafe(self):
-        if None == self.telegramBotProcess or None != self.telegramBotProcess.exitcode:
-            logPrint("Creating Telegram bot")
-            self.telegramBotProcess = self.globalCtx.Process(target=TelegramBotRun, args=(self.cmdQueue,))
-            self.telegramBotProcess.start()
-        if None == self.GSMHatProcess or None != self.GSMHatProcess.exitcode:
-            logPrint("Creating GSMHat controller")
-            self.GSMHatProcess = self.globalCtx.Process(target=GSMHatRun, args=(self.cmdQueue,))
-            self.GSMHatProcess.start()
-        if None == self.RFCtlProcess or None != self.RFCtlProcess.exitcode:
-            logPrint("Creating RF listener")
-            self.RFCtlProcess = self.globalCtx.Process(target=RFCtlRun, args=(self.cmdQueue,))
-            self.RFCtlProcess.start()
+        for entryPoint, name, var in self.gateModules:
+            process = getattr(self, var)
+            if None == process or None != process.exitcode:
+                logPrint("Creating %s" % name)
+                process = self.globalCtx.Process(target=entryPoint, args=(self.cmdQueue,), name=name)
+                setattr(self, var, process)
 
     def killProcesses(self):
-        if self.telegramBotProcess:
-            self.telegramBotProcess.terminate()
-            self.telegramBotProcess = None
-        if self.GSMHatProcess:
-            self.GSMHatProcess.terminate()
-            self.GSMHatProcess = None
-        if self.RFCtlProcess:
-            self.RFCtlProcess.terminate()
-            self.RFCtlProcess = None
+        for _, _, var in self.gateModules:
+            process = getattr(self, var)
+            if process and None == process.exitcode:
+                process.terminate()
+                setattr(self, var, None)
 
     def mainLoop(self):
         logPrint("--- MainLoop ---")

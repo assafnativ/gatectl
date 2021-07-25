@@ -1,6 +1,8 @@
 import os
 import subprocess
 import time
+import multiprocessing as mp
+import logging
 
 import colors
 import colorama
@@ -18,14 +20,23 @@ def configLoad(cfgFileName, expectedConfigs=None):
             assert config_name in cfg, "%s configuration is missing in config file" % config_name
     return cfg
 
+logger = None
 cfg = configLoad('config.py')
-log_file = None
+def getLogger():
+    global logger
+    if logger:
+        return logger
+    logger = mp.get_logger()
+    logger.setLevel(logging.INFO)
+    formatter = logging.Formatter('[%(asctime)s| %(levelname)s| %(processName)s] %(message)s')
+    handler = logging.FileHandler(cfg.LOG_FILE_NAME)
+    handler.setFormatter(formatter)
+    if not len(logger.handlers):
+        logger.addHandler(handler)
+    return logger
+
 def logPrint(text):
-    global log_file
-    if not log_file:
-        log_file = safeOpenAppend(cfg.LOG_FILE_NAME % os.getpid())
-    log_file.write(time.ctime() + '\t' + text+"\n")
-    log_file.flush()
+    getLogger().info(text)
 
 def safeOpenAppend(fileName):
     dirName = os.path.dirname(fileName)

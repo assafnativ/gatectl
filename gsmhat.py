@@ -1,7 +1,8 @@
 import binascii
 import time
-import RPi.GPIO as GPIO
+import traceback
 
+import RPi.GPIO as GPIO
 import baker
 import serial
 
@@ -28,8 +29,12 @@ class GSMHat(object):
 
     def getDeviceId(self):
         self.sendCmd(b"ATI")
+        time.sleep(0.1)
         id_data = self.normalizedRecv()
-        return id_data[:3]
+        logPrint("ATI answer: %r" % id_data)
+        if len(id_data) < 3:
+            return None
+        return id_data[2]
 
     def pwrOnIfNeeded(self):
         if self.pingDevice():
@@ -66,6 +71,7 @@ class GSMHat(object):
 
     def pingDevice(self):
         self.sendCmd(b"AT")
+        time.sleep(0.02)
         recv = self.recv(quiet=True)
         if 10 < len(recv):
             logPrint("Got extra data: " + colors.red(recv.decode('utf8')))
@@ -185,16 +191,18 @@ class GSMHat(object):
 
 @baker.command
 def GSMHatRun(cmdQueue):
-    gsm = GSMHat(cmdQueue)
+    gsm = None
     try:
+        gsm = GSMHat(cmdQueue)
         gsm.mainLoop()
     except:
         last_error = traceback.format_exc()
         logPrint(colors.bold(colors.red(last_error)))
         time.sleep(10)
     finally:
-        gsm.close()
-        gsm = None
+        if None != gsm:
+            gsm.close()
+            gsm = None
 
 if __name__ == '__main__':
     colorama.init(strip=False)

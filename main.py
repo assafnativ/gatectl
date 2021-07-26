@@ -3,6 +3,7 @@ import os
 import sys
 import subprocess
 import multiprocessing as mp
+import traceback
 
 import baker
 import re
@@ -106,8 +107,8 @@ class GateControl(object):
     def __init__(self, cfg):
         logPrint("Starting GateControl")
         self.gateModules = [
-                (telegramBotRun, 'TelegramBot', 'telegramBotProcess'),
-                (GSMHatRun 'GSM', 'GSMHatProcess'),
+                (TelegramBotRun, 'TelegramBot', 'telegramBotProcess'),
+                (GSMHatRun, 'GSM', 'GSMHatProcess'),
                 (RFCtlRun, 'RF', 'RFCtlProcess')]
         for _, _, var in self.gateModules:
             setattr(self, var, None)
@@ -158,10 +159,10 @@ class GateControl(object):
                 return True
         return False
 
-    def gateUp(self):
+    def gateUp(self, uptime=2):
         if self.isLocked:
             return
-        self.gateMachine.up()
+        self.gateMachine.up(uptime=uptime)
 
     def gateLock(self):
         self.isLocked = True
@@ -178,12 +179,19 @@ class GateControl(object):
         got_access = False
         played = False
         command = cfg.OPEN_GATE_WORDS_LIST.get(msg, None)
+        uptime = 2
+        if msg.isnumeric():
+            command = 'up'
+            try:
+                uptime = int(msg)
+            except:
+                pass
         if command:
             logPrint("Got %s command" % command)
         if 'up' == command:
             if self.hasGateAccess(sender_utf8, whitelist, isPhone):
                 got_access = True
-                self.gateUp()
+                self.gateUp(uptime=uptime)
             else:
                 logPrint(colors.red("No access to %r" % sender_utf8))
         elif 'reboot' == command:
@@ -237,6 +245,7 @@ class GateControl(object):
                 logPrint("Creating %s" % name)
                 process = self.globalCtx.Process(target=entryPoint, args=(self.cmdQueue,), name=name)
                 setattr(self, var, process)
+                process.start()
 
     def killProcesses(self):
         for _, _, var in self.gateModules:

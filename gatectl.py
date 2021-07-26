@@ -23,9 +23,9 @@ class GateMachine(object):
     def close(self):
         GPIO.cleanup()
 
-    def triggerPin(self, pin_number, active_low=False):
+    def triggerPin(self, pin_number, active_low=False, uptime=2):
         self.activatePin(pin_number, active_low)
-        time.sleep(2)
+        time.sleep(uptime)
         self.deactivatePin(pin_number, active_low)
 
     def activatePin(self, pin_number, active_low=False):
@@ -43,9 +43,9 @@ class GateMachine(object):
         time.sleep(0.05)
         GPIO.setup(pin_number, GPIO.IN)
 
-    def up(self):
+    def up(self, uptime=2):
         logPrint(colors.green("Gate up!"))
-        self.triggerPin(self.up_gpio, False)
+        self.triggerPin(self.up_gpio, False, uptime=uptime)
 
     def holdDown(self, active_low=False):
         logPrint(colors.red("Gate power off lock!"))

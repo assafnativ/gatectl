@@ -17,7 +17,8 @@ class GSMHat(object):
         self.initPwrPin()
         self.serial = serial.Serial(cfg.GSM_SERIAL_DEV, 115200, timeout=1)
         self.pwrOnIfNeeded()
-        self.deviceId = self.getDeviceId()[0]
+        self.deviceId = self.getDeviceId()
+        self.lastPing = time.time()
         logPrint("Connected to GSM hat")
         self.recv()
 
@@ -164,7 +165,7 @@ class GSMHat(object):
         return self.answerCall(callerId)
 
     def answerCall(self, callerId):
-        logPrint("%r is calling" % callerId)
+        logPrint(colors.yellow("%r is calling" % callerId))
         self.cmdQueue.put(('GSM Call', callerId, None))
         # We do not answer calls, just using the caller id
         self.hangUpCall()
@@ -188,6 +189,9 @@ class GSMHat(object):
                 if b"POWER DOWN" in l:
                     time.sleep(4)
                     self.resetIfNeeded()
+            if cfg.PING_INTERVAL < (time.time() - self.lastPing):
+                self.lastPing = time.time()
+                self.resetIfNeeded()
 
 @baker.command
 def GSMHatRun(cmdQueue):

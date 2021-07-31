@@ -74,7 +74,7 @@ def validate_usb():
 @baker.command
 def reboot_system():
     logPrint(colors.red("Rebooting!!!"))
-    #runInBackground("reboot")
+    runInBackground("reboot")
 
 @baker.command
 def run():
@@ -110,10 +110,12 @@ class GateControl(object):
                 (TelegramBotRun, 'TelegramBot', 'telegramBotProcess'),
                 (GSMHatRun, 'GSM', 'GSMHatProcess'),
                 (RFCtlRun, 'RF', 'RFCtlProcess')]
+        self.modulesRestart = 0
         for _, _, var in self.gateModules:
             setattr(self, var, None)
         self.gateMachine = GateMachine(cfg.GPIO_GATE_UP, cfg.GPIO_GATE_POWER)
         self.lastPing = time.time()
+        self.lastTempCheck = time.time()
         self.usbFailCount = 0
         self.isLocked = False
         self.globalCtx = mp.get_context('spawn')
@@ -186,6 +188,7 @@ class GateControl(object):
                 uptime = int(msg)
             except:
                 pass
+        uptime = min(uptime, 300)
         if command:
             logPrint("Got %s command" % command)
         if 'up' == command:
@@ -242,6 +245,7 @@ class GateControl(object):
         for entryPoint, name, var in self.gateModules:
             process = getattr(self, var)
             if None == process or None != process.exitcode:
+                self.modulesRestart += 1
                 logPrint("Creating %s" % name)
                 process = self.globalCtx.Process(target=entryPoint, args=(self.cmdQueue,), name=name)
                 setattr(self, var, process)
@@ -279,8 +283,13 @@ class GateControl(object):
                     self.handleCall(sender)
                 elif 'SMS' == moduleName:
                     self.handleMessage((sender, msg), 'whitelist.txt', True)
-            if cfg.PING_INTERVAL < (time.time() - self.lastPing):
+
+            if 60 < (time.time() - self.lastTempCheck):
+                self.lastTempCheck = time.time()
                 logPrint("Pi temperature is %f" % get_pi_temperature())
+            if cfg.PING_INTERVAL < (time.time() - self.lastPing):
+                if 100 < self.modulesRestart:
+                    reboot_system()
                 if not validate_usb():
                     self.usbFailCount += 1
                     if cfg.MAX_USB_FAIL_COUNT < self.usbFailCount:

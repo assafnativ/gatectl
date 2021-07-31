@@ -41,7 +41,7 @@ class RFControl(object):
         pulselength = self.dev.rx_pulselength
         if None != self.proto and proto != self.proto:
             return False
-        logPrint("Got RF signal: code %d pulselength %d" % (code, pulselength))
+        #logPrint("Got RF signal: code %d pulselength %d" % (code, pulselength))
         for pulse_min, pulse_max in self.pulse_ranges:
             if pulse_min <= pulselength <= pulse_max:
                 break

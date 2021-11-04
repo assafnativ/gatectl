@@ -1,8 +1,11 @@
 #!/usr/bin/python
 
 import time
+import os
 import traceback
+import multiprocessing as mp
 
+import baker
 import colors
 from datetime import datetime
 from tendo import singleton
@@ -44,16 +47,8 @@ class GateMachine(object):
         GPIO.setup(pin_number, GPIO.IN)
 
     def up(self, uptime=2):
-        logPrint(colors.green("Gate up!"))
+        logPrint(colors.green("Gate up! for %f sec" % float(uptime)))
         self.triggerPin(self.up_gpio, False, uptime=uptime)
-
-    def holdDown(self, active_low=False):
-        logPrint(colors.red("Gate power off lock!"))
-        self.activatePin(self.power_gpio, active_low=active_low)
-
-    def releaseDown(self, active_low=False):
-        logPrint(colors.yellow("Gate power unlock!"))
-        self.deactivatePin(self.power_gpio, active_low=active_low)
 
     def resetGate(self, active_low=False):
         logPrint(colors.yellow("Reset gate control"))
@@ -62,4 +57,32 @@ class GateMachine(object):
         time.sleep(4)
         self.deactivatePin(self.power_gpio, active_low=active_low)
         logPrint("Gate power off")
+
+@baker.command
+def up(uptime=2):
+    uptime = float(uptime)
+    gm = GateMachine(cfg.GPIO_GATE_UP, cfg.GPIO_GATE_POWER)
+    gm.up(uptime)
+
+def MachineLoopRun(cmdQueue):
+    logPrint("Gate machine started")
+    gm = GateMachine(cfg.GPIO_GATE_UP, cfg.GPIO_GATE_POWER)
+    while True:
+        try:
+            if cmdQueue.empty():
+                time.sleep(0.02)
+                continue
+            cmd, args = cmdQueue.get()
+            logPrint("Gate handle: %s %r" % (cmd, args))
+            getattr(gm, cmd)(*args)
+            if 'close' == cmd:
+                return
+        except:
+            last_error = traceback.format_exc()
+            logPrint(colors.bold(colors.red(last_error)))
+
+
+if __name__ == '__main__':
+    colorama.init(strip=False)
+    baker.run()
 

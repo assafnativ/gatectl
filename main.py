@@ -106,30 +106,28 @@ def run():
 class GateControl(object):
     def __init__(self, cfg):
         logPrint("Starting GateControl")
+        self.globalCtx = mp.get_context('spawn')
+        self.cmdQueue = self.globalCtx.Queue()
+        self.gateQueue = self.globalCtx.Queue()
         self.gateModules = [
-                (TelegramBotRun, 'TelegramBot', 'telegramBotProcess'),
-                (GSMHatRun, 'GSM', 'GSMHatProcess'),
-                (RFCtlRun, 'RF', 'RFCtlProcess')]
+                (MachineLoopRun, 'gateMachine', 'gateMachineProcess', (self.gateQueue,)),
+                (TelegramBotRun, 'TelegramBot', 'telegramBotProcess', (self.cmdQueue,)),
+                (GSMHatRun, 'GSM', 'GSMHatProcess', (self.cmdQueue,)),
+                (RFCtlRun, 'RF', 'RFCtlProcess', (self.cmdQueue,))]
         self.modulesRestart = 0
-        for _, _, var in self.gateModules:
+        for _, _, var, _ in self.gateModules:
             setattr(self, var, None)
-        self.gateMachine = GateMachine(cfg.GPIO_GATE_UP, cfg.GPIO_GATE_POWER)
         self.lastPing = time.time()
         self.lastTempCheck = time.time()
         self.usbFailCount = 0
         self.isLocked = False
-        self.globalCtx = mp.get_context('spawn')
-        self.cmdQueue = self.globalCtx.Queue()
 
     def __enter__(self):
         return self
 
     def __exit__(self, t, value, tb):
-        if self.isLocked:
-            self.GateMachine.releaseDown()
         self.isLocked = False
-        self.gateMachine.close()
-        self.gateMachine = None
+        self.gateQueue.put(('close', ()))
         if tb or value or t:
             trace = traceback.format_exc()
             logPrint(colors.red(trace))
@@ -164,15 +162,13 @@ class GateControl(object):
     def gateUp(self, uptime=2):
         if self.isLocked:
             return
-        self.gateMachine.up(uptime=uptime)
+        self.gateQueue.put(('up', (uptime,)))
 
     def gateLock(self):
         self.isLocked = True
-        self.gateMachine.holdDown()
 
     def gateUnlock(self):
         self.isLocked = False
-        self.gateMachine.releaseDown()
 
     def handleMessage(self, msg, whitelist, isPhone):
         sender, msg = msg
@@ -207,7 +203,7 @@ class GateControl(object):
                 self.gateUnlock()
         elif 'gatereset' == command:
             if self.hasGateAccess(sender_utf8, whitelist, isPhone):
-                self.gateMachine.resetGate()
+                self.gateQueue.put(('resetGate', ()))
         elif None != command:
             logPrint("Unknown command %s" % command)
         else:
@@ -242,17 +238,17 @@ class GateControl(object):
         return messages
 
     def createSubProcessesSafe(self):
-        for entryPoint, name, var in self.gateModules:
+        for entryPoint, name, var, args in self.gateModules:
             process = getattr(self, var)
             if None == process or None != process.exitcode:
                 self.modulesRestart += 1
                 logPrint("Creating %s" % name)
-                process = self.globalCtx.Process(target=entryPoint, args=(self.cmdQueue,), name=name)
+                process = self.globalCtx.Process(target=entryPoint, args=args, name=name)
                 setattr(self, var, process)
                 process.start()
 
     def killProcesses(self):
-        for _, _, var in self.gateModules:
+        for _, _, var, _ in self.gateModules:
             process = getattr(self, var)
             if process and None == process.exitcode:
                 process.terminate()

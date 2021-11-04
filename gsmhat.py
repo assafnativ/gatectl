@@ -43,6 +43,7 @@ class GSMHat(object):
         # Try to power up the GSM Hat
         logPrint("Need to power up GSM hat")
         if None == cfg.GSM_PWR_PIN:
+            logPrint(colors.red("Power pin for GSM hat is not configured!"))
             return False
         self.pwrSwitch()
         logPrint("Done - trying to ping GSM hat")
@@ -65,18 +66,21 @@ class GSMHat(object):
             logPrint("No power pin")
             return
         GPIO.output(cfg.GSM_PWR_PIN, GPIO.LOW)
-        time.sleep(4)
+        time.sleep(3)
         GPIO.output(cfg.GSM_PWR_PIN, GPIO.HIGH)
         logPrint("GSM hat power on")
-        time.sleep(20)
+        time.sleep(10)
 
     def pingDevice(self):
         self.sendCmd(b"AT")
-        time.sleep(0.02)
+        time.sleep(0.5)
         recv = self.recv(quiet=True)
         if 10 < len(recv):
             logPrint("Got extra data: " + colors.red(recv.decode('utf8')))
-        return b"OK" in recv[-10:]
+        if b"OK" in recv[-10:]:
+            return True
+        logPrint(colors.bold(colors.yellow('Ping result in: %r' % recv)))
+        return False
 
     def readSMS(self):
         self.configure()

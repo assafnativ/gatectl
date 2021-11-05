@@ -136,7 +136,7 @@ dmypy.json
 # Personal files
 /logs/*
 whitelist.txt
-telegram_*
+telegram_whitelist.txt
 config.py
 config_ex25.py
 config_SIM808.py

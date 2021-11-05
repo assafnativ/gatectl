@@ -2,4 +2,4 @@
 
 sleep 10
 cd /home/pi/src
-python gatectl.py run True >> ./stdlog.txt 2>&1 &
+python main.py run >> ./stdlog.txt 2>&1 &

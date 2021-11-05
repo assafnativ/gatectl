@@ -9,8 +9,8 @@ GPIO_GATE_POWER = 38
 GPIO_GATE_HOLD  = 40 # Not in use
 
 MP3_PLAYER = 'mpg321'
-curent_datetime_str = datetime.now().strftime("%Y%m%d_%I%M")
-LOG_FILE_NAME = "logs/ctl_%s.log" % curent_datetime_str
+current_datetime_str = datetime.now().strftime("%Y%m%d_%I%M")
+LOG_FILE_NAME = "logs/ctl_" + current_datetime_str + ".log"
 OPERATION_LOG = "logs/operation_%s.log"
 PING_INTERVAL = 60 * 2
 MAX_FAILS_IN_A_ROW = 4

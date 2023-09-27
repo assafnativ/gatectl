@@ -110,10 +110,10 @@ class GateControl(object):
         self.cmdQueue = self.globalCtx.Queue()
         self.gateQueue = self.globalCtx.Queue()
         self.gateModules = [
-                (MachineLoopRun, 'gateMachine', 'gateMachineProcess', (self.gateQueue,)),
-                (TelegramBotRun, 'TelegramBot', 'telegramBotProcess', (self.cmdQueue,)),
-                (GSMHatRun, 'GSM', 'GSMHatProcess', (self.cmdQueue,)),
-                (RFCtlRun, 'RF', 'RFCtlProcess', (self.cmdQueue,))]
+                (MachineLoopRun, 'gateMachine', 'gateMachineProcess', (cfg, self.gateQueue,)),
+                (TelegramBotRun, 'TelegramBot', 'telegramBotProcess', (cfg, self.cmdQueue,)),
+                (GSMHatRun, 'GSM', 'GSMHatProcess', (cfg, self.cmdQueue,)),
+                (RFCtlRun, 'RF', 'RFCtlProcess', (cfg, self.cmdQueue,))]
         self.modulesRestart = 0
         for _, _, var, _ in self.gateModules:
             setattr(self, var, None)
@@ -215,7 +215,7 @@ class GateControl(object):
                     played = True
                     break
         self.writeToOperationLog( \
-            b'Msg:\t%s\t%s\t%r\t%r\n' % (sender_utf8, msg.encode('utf8', errors='ignore'), got_access, played))
+            b'Msg:\t%s\t%s\t%r\n' % (sender_utf8, msg.encode('utf8', errors='ignore'), got_access))
 
     def handleCall(self, callerId):
         isAllowedIn = self.hasGateAccess(callerId, 'whitelist.txt', True)

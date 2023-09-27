@@ -13,7 +13,6 @@ import RPi.GPIO as GPIO
 
 from common import *
 
-cfg = configLoad('config.py')
 class GateMachine(object):
     def __init__(self, up_gpio, power_gpio):
         logPrint("Starting GateMachine")
@@ -60,11 +59,12 @@ class GateMachine(object):
 
 @baker.command
 def up(uptime=2):
+    cfg = configLoad('config.py')
     uptime = float(uptime)
     gm = GateMachine(cfg.GPIO_GATE_UP, cfg.GPIO_GATE_POWER)
     gm.up(uptime)
 
-def MachineLoopRun(cmdQueue):
+def MachineLoopRun(cfg, cmdQueue):
     logPrint("Gate machine started")
     gm = GateMachine(cfg.GPIO_GATE_UP, cfg.GPIO_GATE_POWER)
     while True:

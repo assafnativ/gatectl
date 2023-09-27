@@ -8,14 +8,14 @@ import serial
 
 from common import *
 
-cfg = configLoad('config.py')
 class GSMHat(object):
-    def __init__(self, cmdQueue):
+    def __init__(self, cfg, cmdQueue):
         logPrint("Starting GSMHat")
         GPIO.setmode(GPIO.BOARD)
+        self.cfg = cfg
         self.cmdQueue = cmdQueue
         self.initPwrPin()
-        self.serial = serial.Serial(cfg.GSM_SERIAL_DEV, 115200, timeout=1)
+        self.serial = serial.Serial(self.cfg.GSM_SERIAL_DEV, 115200, timeout=1)
         self.pwrOnIfNeeded()
         self.deviceId = self.getDeviceId()
         self.lastPing = time.time()
@@ -23,10 +23,10 @@ class GSMHat(object):
         self.recv()
 
     def initPwrPin(self):
-        if not cfg.GSM_PWR_PIN:
+        if not self.cfg.GSM_PWR_PIN:
             return
-        GPIO.setup(cfg.GSM_PWR_PIN, GPIO.OUT)
-        GPIO.output(cfg.GSM_PWR_PIN, GPIO.HIGH)
+        GPIO.setup(self.cfg.GSM_PWR_PIN, GPIO.OUT)
+        GPIO.output(self.cfg.GSM_PWR_PIN, GPIO.HIGH)
 
     def getDeviceId(self):
         self.sendCmd(b"ATI")
@@ -42,7 +42,7 @@ class GSMHat(object):
             return False
         # Try to power up the GSM Hat
         logPrint("Need to power up GSM hat")
-        if None == cfg.GSM_PWR_PIN:
+        if None == self.cfg.GSM_PWR_PIN:
             logPrint(colors.red("Power pin for GSM hat is not configured!"))
             return False
         self.pwrSwitch()
@@ -62,12 +62,12 @@ class GSMHat(object):
         assert b"OK" in data, "Cant setup SMS to TEXT mode"
 
     def pwrSwitch(self):
-        if not cfg.GSM_PWR_PIN:
+        if not self.cfg.GSM_PWR_PIN:
             logPrint("No power pin")
             return
-        GPIO.output(cfg.GSM_PWR_PIN, GPIO.LOW)
+        GPIO.output(self.cfg.GSM_PWR_PIN, GPIO.LOW)
         time.sleep(3)
-        GPIO.output(cfg.GSM_PWR_PIN, GPIO.HIGH)
+        GPIO.output(self.cfg.GSM_PWR_PIN, GPIO.HIGH)
         logPrint("GSM hat power on")
         time.sleep(10)
 
@@ -175,7 +175,7 @@ class GSMHat(object):
         self.hangUpCall()
 
     def mainLoop(self):
-        while not os.path.isfile(cfg.KILL_FILE):
+        while not os.path.isfile(self.cfg.KILL_FILE):
             time.sleep(0.05)
             lines = self.normalizedRecv()
             for l in lines:
@@ -193,15 +193,14 @@ class GSMHat(object):
                 if b"POWER DOWN" in l:
                     time.sleep(4)
                     self.resetIfNeeded()
-            if cfg.PING_INTERVAL < (time.time() - self.lastPing):
+            if self.cfg.PING_INTERVAL < (time.time() - self.lastPing):
                 self.lastPing = time.time()
                 self.resetIfNeeded()
 
-@baker.command
-def GSMHatRun(cmdQueue):
+def GSMHatRun(cfg, cmdQueue):
     gsm = None
     try:
-        gsm = GSMHat(cmdQueue)
+        gsm = GSMHat(cfg, cmdQueue)
         gsm.mainLoop()
     except:
         last_error = traceback.format_exc()

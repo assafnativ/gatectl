@@ -5,7 +5,6 @@ import telepot
 
 from common import *
 
-cfg = configLoad('config.py')
 class TelegramBot(object):
     def __init__(self, token, lastMsgFileName):
         self.lastMsgId = 0
@@ -51,11 +50,12 @@ class TelegramBot(object):
 
 @baker.command
 def read_telegram_messages():
+    cfg = configLoad('config.py')
     telegramBot = TelegramBot(cfg.TELEGRAM_BOT_TOKEN, cfg.TELEGRAM_LAST_MSG_FILE)
     for sender, text in telegramBot.getMessages():
         logPrint("%s sent: %s" % (sender, text))
 
-def TelegramBotRun(cmdQueue):
+def TelegramBotRun(cfg, cmdQueue):
     logPrint("Telegram Bot main loop")
     telegramBot = TelegramBot(cfg.TELEGRAM_BOT_TOKEN, cfg.TELEGRAM_LAST_MSG_FILE)
     while True:

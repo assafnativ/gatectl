@@ -5,7 +5,6 @@ import baker
 
 from common import *
 
-cfg = configLoad('config.py')
 class RFControl(object):
     def __init__(self, rf_gpio, proto, code, pulselength):
         self.rf_gpio = rf_gpio
@@ -63,8 +62,7 @@ def rf_test(gpio):
         rfCtl.should_open_the_gate()
         time.sleep(0.1)
 
-@baker.command
-def RFCtlRun(cmdQueue):
+def RFCtlRun(cfg, cmdQueue):
     rfCtl = RFControl(cfg.RF_GPIO, cfg.RF_PROTO, cfg.RF_CODE, cfg.RF_PULSELENGTH)
     while True:
         if os.path.isfile(cfg.KILL_FILE):

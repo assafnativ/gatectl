@@ -74,7 +74,6 @@ def validate_usb():
 @baker.command
 def reboot_system():
     logPrint(colors.red("Rebooting!!!"))
-    return
     runInBackground("reboot")
 
 @baker.command

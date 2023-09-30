@@ -63,9 +63,9 @@ def rf_test(gpio):
         time.sleep(0.1)
 
 def RFCtlRun(cfg, cmdQueue):
-    rfCtl = RFControl(cfg.RF_GPIO, cfg.RF_PROTO, cfg.RF_CODE, cfg.RF_PULSELENGTH)
+    rfCtl = RFControl(cfg['RF_GPIO'], cfg['RF_PROTO'], cfg['RF_CODE'], cfg['RF_PULSELENGTH'])
     while True:
-        if os.path.isfile(cfg.KILL_FILE):
+        if os.path.isfile(cfg['KILL_FILE']):
             rfCtl.cleanup()
             logPrint(colors.magenta("rfCtl KTHXBYE"))
             return False

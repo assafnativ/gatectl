@@ -47,8 +47,8 @@ def runInBackground(cmd):
 
 def playMusic(fname):
     # Clean current playing music
-    kill_process_by_name(cfg.MP3_PLAYER)
-    cmd = "%s %s/%s &" % (cfg.MP3_PLAYER, os.path.abspath('.'), fname)
+    kill_process_by_name(cfg['MP3_PLAYER'])
+    cmd = "%s %s/%s &" % (cfg['MP3_PLAYER'], os.path.abspath('.'), fname)
     if 0 == os.geteuid():
         runInBackground('runuser -l pi -c "%s"' % cmd)
     else:
@@ -65,7 +65,7 @@ def get_pi_temperature():
 @baker.command
 def validate_usb():
     stdout, _ = subprocess.Popen(['lsusb'], stdout=subprocess.PIPE).communicate()
-    for usb_id in cfg.MUST_EXISTS_USB:
+    for usb_id in cfg['MUST_EXISTS_USB']:
         if usb_id not in stdout:
             logPrint(colors.red("USB failure!- %r is missing" % usb_id))
             return False
@@ -74,6 +74,7 @@ def validate_usb():
 @baker.command
 def reboot_system():
     logPrint(colors.red("Rebooting!!!"))
+    return
     runInBackground("reboot")
 
 @baker.command
@@ -100,7 +101,7 @@ def run():
                 failCount += 1
             logPrint("System error %d" % failCount)
             lastFail = time.time()
-            if cfg.MAX_FAILS_IN_A_ROW < failCount:
+            if cfg['MAX_FAILS_IN_A_ROW'] < failCount:
                 reboot_system()
 
 class GateControl(object):
@@ -134,7 +135,7 @@ class GateControl(object):
         return
 
     def writeToOperationLog(self, msg):
-        operationLog = cfg.OPERATION_LOG % datetime.now().strftime("%Y%m%d")
+        operationLog = cfg['OPERATION_LOG'] % datetime.now().strftime("%Y%m%d")
         with open(operationLog, "ab") as log:
             log.write(time.ctime().encode('utf8') + b'\t' + msg)
 
@@ -176,7 +177,7 @@ class GateControl(object):
         sender_utf8 = sender.encode('utf8')
         got_access = False
         played = False
-        command = cfg.OPEN_GATE_WORDS_LIST.get(msg, None)
+        command = cfg['OPEN_GATE_WORDS_LIST'].get(msg, None)
         uptime = 2
         if msg.isnumeric():
             command = 'up'
@@ -258,15 +259,15 @@ class GateControl(object):
         logPrint("--- MainLoop ---")
         while True:
             self.createSubProcessesSafe()
-            if os.path.isfile(cfg.GATEUP_TRIGGER_FILE):
+            if os.path.isfile(cfg['GATEUP_TRIGGER_FILE']):
                 self.writeToOperationLog(b'LocalTrigger')
-                os.unlink(cfg.GATEUP_TRIGGER_FILE)
+                os.unlink(cfg['GATEUP_TRIGGER_FILE'])
                 self.gateUp()
-            if os.path.isfile(cfg.KILL_FILE):
+            if os.path.isfile(cfg['KILL_FILE']):
                 logPrint(colors.magenta("KTHXBYE"))
                 time.sleep(2)
                 self.killProcesses()
-                os.unlink(cfg.KILL_FILE)
+                os.unlink(cfg['KILL_FILE'])
                 return False
             if not self.cmdQueue.empty():
                 moduleName, sender, msg = self.cmdQueue.get()
@@ -283,12 +284,12 @@ class GateControl(object):
             if 60 < (time.time() - self.lastTempCheck):
                 self.lastTempCheck = time.time()
                 logPrint("Pi temperature is %f" % get_pi_temperature())
-            if cfg.PING_INTERVAL < (time.time() - self.lastPing):
+            if cfg['PING_INTERVAL'] < (time.time() - self.lastPing):
                 if 100 < self.modulesRestart:
                     reboot_system()
                 if not validate_usb():
                     self.usbFailCount += 1
-                    if cfg.MAX_USB_FAIL_COUNT < self.usbFailCount:
+                    if cfg['MAX_USB_FAIL_COUNT'] < self.usbFailCount:
                         logPrint(colors.red("Too many USB failures, rebooting!"))
                         time.sleep(20)
                         reboot_system()

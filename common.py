@@ -2,18 +2,15 @@ import os
 import subprocess
 import time
 import multiprocessing as mp
+import multiprocessing_logging
 import logging
 
 import colors
 import colorama
 from past.builtins import execfile
 
-class myDict(dict):
-    def __getattr__(self, item):
-        return self[item]
-
 def configLoad(cfgFileName, expectedConfigs=None):
-    cfg = myDict()
+    cfg = {}
     execfile(cfgFileName, cfg)
     if expectedConfigs:
         for config_name in expectedConfigs:
@@ -29,10 +26,11 @@ def getLogger():
     logger = mp.get_logger()
     logger.setLevel(logging.INFO)
     formatter = logging.Formatter('[%(asctime)s| %(levelname)s| %(processName)s] %(message)s')
-    handler = logging.FileHandler(cfg.LOG_FILE_NAME)
+    handler = logging.FileHandler(cfg['LOG_FILE_NAME'])
     handler.setFormatter(formatter)
     if not len(logger.handlers):
         logger.addHandler(handler)
+    multiprocessing_logging.install_mp_handler()
     return logger
 
 def logPrint(text):
@@ -47,7 +45,7 @@ def safeOpenAppend(fileName):
         targetFileSize = os.path.getsize(fileName)
     except OSError:
         targetFileSize = 0
-    if cfg.MAX_LOG_FILE_SIZE < targetFileSize:
+    if cfg['MAX_LOG_FILE_SIZE'] < targetFileSize:
         os.unlink(fileName)
     return open(fileName, 'a')
 

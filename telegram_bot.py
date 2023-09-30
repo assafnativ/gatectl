@@ -51,22 +51,22 @@ class TelegramBot(object):
 @baker.command
 def read_telegram_messages():
     cfg = configLoad('config.py')
-    telegramBot = TelegramBot(cfg.TELEGRAM_BOT_TOKEN, cfg.TELEGRAM_LAST_MSG_FILE)
+    telegramBot = TelegramBot(cfg['TELEGRAM_BOT_TOKEN'], cfg['TELEGRAM_LAST_MSG_FILE'])
     for sender, text in telegramBot.getMessages():
         logPrint("%s sent: %s" % (sender, text))
 
 def TelegramBotRun(cfg, cmdQueue):
     logPrint("Telegram Bot main loop")
-    telegramBot = TelegramBot(cfg.TELEGRAM_BOT_TOKEN, cfg.TELEGRAM_LAST_MSG_FILE)
+    telegramBot = TelegramBot(cfg['TELEGRAM_BOT_TOKEN'], cfg['TELEGRAM_LAST_MSG_FILE'])
     while True:
-        if os.path.isfile(cfg.KILL_FILE):
+        if os.path.isfile(cfg['KILL_FILE']):
             logPrint(colors.magenta("TelegramBot KTHXBYE"))
             return False
         try:
             messages = telegramBot.getMessages()
             for sender, text in messages:
                 cmdQueue.put(('TelegramBot', sender, text))
-            time.sleep(cfg.TELEGRAM_CHECK_INTERVAL)
+            time.sleep(cfg['TELEGRAM_CHECK_INTERVAL'])
         except:
             last_error = traceback.format_exc()
             logPrint(colors.bold(colors.red(last_error)))

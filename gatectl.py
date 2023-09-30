@@ -61,12 +61,12 @@ class GateMachine(object):
 def up(uptime=2):
     cfg = configLoad('config.py')
     uptime = float(uptime)
-    gm = GateMachine(cfg.GPIO_GATE_UP, cfg.GPIO_GATE_POWER)
+    gm = GateMachine(cfg['GPIO_GATE_UP'], cfg['GPIO_GATE_POWER'])
     gm.up(uptime)
 
 def MachineLoopRun(cfg, cmdQueue):
     logPrint("Gate machine started")
-    gm = GateMachine(cfg.GPIO_GATE_UP, cfg.GPIO_GATE_POWER)
+    gm = GateMachine(cfg['GPIO_GATE_UP'], cfg['GPIO_GATE_POWER'])
     while True:
         try:
             if cmdQueue.empty():

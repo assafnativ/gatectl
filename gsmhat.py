@@ -15,7 +15,7 @@ class GSMHat(object):
         self.cfg = cfg
         self.cmdQueue = cmdQueue
         self.initPwrPin()
-        self.serial = serial.Serial(self.cfg['GSM_SERIAL_DEV'], 115200, timeout=1)
+        self.serial = serial.Serial(self.cfg['GSM_SERIAL_DEV'], 115200, timeout=1.5)
         self.pwrOnIfNeeded()
         self.deviceId = self.getDeviceId()
         self.lastPing = time.time()
@@ -30,7 +30,6 @@ class GSMHat(object):
 
     def getDeviceId(self):
         self.sendCmd(b"ATI")
-        time.sleep(0.1)
         id_data = self.normalizedRecv()
         logPrint("ATI answer: %r" % id_data)
         if len(id_data) < 3:
@@ -73,7 +72,6 @@ class GSMHat(object):
 
     def pingDevice(self):
         self.sendCmd(b"AT")
-        time.sleep(0.5)
         recv = self.recv(quiet=True)
         if 10 < len(recv):
             logPrint("Got extra data: " + colors.red(recv.decode('utf8')))
@@ -120,18 +118,18 @@ class GSMHat(object):
         return [x.strip() for x in self.recv().replace(b'\r\n', b'\n').split(b'\n') if x.strip()]
 
     def recv(self, quiet=False):
-        data = self.serial.read(self.serial.inWaiting())
-        clearData = data.decode('utf8').strip()
+        data = self.serial.read(1048576)
+        clearData = data.decode('utf8', errors='ignore').strip()
         if clearData and not quiet:
             logPrint(colors.faint(colors.red(clearData)))
         return data
 
     def sendCmd(self, cmd):
         self.send(cmd + b'\r\n')
-        time.sleep(0.1)
 
     def send(self, data):
         self.serial.write(data)
+        self.serial.flush()
 
     def close(self):
         self.serial.close()
@@ -176,7 +174,6 @@ class GSMHat(object):
 
     def mainLoop(self):
         while not os.path.isfile(self.cfg['KILL_FILE']):
-            time.sleep(0.05)
             lines = self.normalizedRecv()
             for l in lines:
                 l = l.strip()
@@ -193,7 +190,7 @@ class GSMHat(object):
                 if b"POWER DOWN" in l:
                     time.sleep(4)
                     self.resetIfNeeded()
-            if self.cfg['PING_INTERVAL']< (time.time() - self.lastPing):
+            if self.cfg['PING_INTERVAL'] < (time.time() - self.lastPing):
                 self.lastPing = time.time()
                 self.resetIfNeeded()
 

@@ -24,10 +24,11 @@ class TelegramBot(object):
         messages = None
         try:
             messages = self.bot.getUpdates(self.lastMsgId, timeout=1.1)
-        except:
+        except Exception as e:
             last_error = traceback.format_exc()
             logPrint('Got exception in getMessage: \n' + colors.bold(colors.red(last_error)))
-            return []
+            time.sleep(20)
+            raise e
         result = []
         lastId = self.lastMsgId
         for msg in messages:
@@ -72,10 +73,11 @@ def TelegramBotRun(cfg, cmdQueue):
             for sender, text in messages:
                 cmdQueue.put(('TelegramBot', sender, text))
             time.sleep(cfg['TELEGRAM_CHECK_INTERVAL'])
-        except:
+        except Exception as e:
             last_error = traceback.format_exc()
             logPrint(colors.bold(colors.red(last_error)))
             time.sleep(4)
+            raise e
 
 if __name__ == '__main__':
     colorama.init(strip=False)

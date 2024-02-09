@@ -44,5 +44,7 @@ Comment out the line "GPIO.setmode(GPIO.BCM)" - in the file /usr/local/lib/pytho
 sudo systemctl disable hciuart.service
 sudo systemctl disable bluealsa.service
 sudo systemctl disable bluetooth.service
+sudo systemctl disable ModemManager
+sudo apt remove modemmanager
 ````
 

@@ -5,6 +5,7 @@ import subprocess
 import multiprocessing as mp
 import traceback
 import math
+import fcntl
 
 import click
 import re
@@ -23,6 +24,7 @@ EXPECTED_CONFIGURATIONS = [
         'GPIO_GATE_UP',
         'GPIO_GATE_POWER',
         'MP3_PLAYER',
+        'LOCK_FILE',
         'LOG_FILE_NAME',
         'OPERATION_LOG',
         'PING_INTERVAL',
@@ -82,9 +84,27 @@ def reboot_system():
     logPrint(colors.red("Rebooting!!!"))
     runInBackground("reboot")
 
+LOCK_FILE_HANDLE = None
+def validate_single_instance():
+    global LOCK_FILE_HANDLE
+    if LOCK_FILE_HANDLE:
+        print(f"File already locked")
+        return False
+    lock_file_path = cfg['LOCK_FILE']
+    LOCK_FILE_HANDLE = os.open(lock_file_path, os.O_WRONLY | os.O_CREAT)
+    try:
+        print(f"Locking {lock_file_path}")
+        fcntl.lockf(LOCK_FILE_HANDLE, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except IOError:
+        print(f"File is already locked {lock_file_path}")
+        return False
+    print("WTF! 12483749")
+    return False
+
 @cli.command()
 def run():
-    me = singleton.SingleInstance()
+    assert validate_single_instance(), "Already running!"
     logPrint("My PID is %d" % os.getpid())
     playMusic('ping.mp3')
     logPrint(colors.blue("Starting!"))
@@ -247,17 +267,18 @@ class GateControl(object):
     def createSubProcessesSafe(self):
         for entryPoint, name, var, args in self.gateModules:
             process = getattr(self, var)
-            if None == process or None != process.exitcode:
-                self.modulesRestart += 1
-                logPrint("Creating %s" % name)
-                process = self.globalCtx.Process(target=entryPoint, args=args, name=name)
-                setattr(self, var, process)
-                process.start()
+            if None != process and process.is_alive():
+                continue
+            self.modulesRestart += 1
+            logPrint("Creating %s" % name)
+            process = self.globalCtx.Process(target=entryPoint, args=args, name=name)
+            setattr(self, var, process)
+            process.start()
 
     def killProcesses(self):
         for _, _, var, _ in self.gateModules:
             process = getattr(self, var)
-            if process and None == process.exitcode:
+            if process and process.is_alive():
                 process.terminate()
                 setattr(self, var, None)
 

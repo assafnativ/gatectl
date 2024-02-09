@@ -8,7 +8,6 @@ import multiprocessing as mp
 import click
 import colors
 from datetime import datetime
-from tendo import singleton
 import RPi.GPIO as GPIO
 
 from common import *

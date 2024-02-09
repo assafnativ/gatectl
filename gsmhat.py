@@ -1,9 +1,9 @@
 import binascii
 import time
 import traceback
+import click
 
 import RPi.GPIO as GPIO
-import baker
 import serial
 
 from common import *
@@ -211,7 +211,13 @@ def GSMHatRun(cfg, cmdQueue):
             gsm.close()
             gsm = None
 
+
+@click.group()
+def cli():
+    pass
+
 if __name__ == '__main__':
     colorama.init(strip=False)
-    baker.run()
+    cli()
+
 

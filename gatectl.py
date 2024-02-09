@@ -5,7 +5,7 @@ import os
 import traceback
 import multiprocessing as mp
 
-import baker
+import click
 import colors
 from datetime import datetime
 from tendo import singleton
@@ -57,7 +57,12 @@ class GateMachine(object):
         self.deactivatePin(self.power_gpio, active_low=active_low)
         logPrint("Gate power off")
 
-@baker.command
+@click.group()
+def cli():
+    pass
+
+@cli.command()
+@click.option('--uptime', type=int, default=2, required=False)
 def up(uptime=2):
     cfg = configLoad('config.py')
     uptime = float(uptime)
@@ -84,5 +89,5 @@ def MachineLoopRun(cfg, cmdQueue):
 
 if __name__ == '__main__':
     colorama.init(strip=False)
-    baker.run()
+    cli()
 

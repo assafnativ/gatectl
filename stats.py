@@ -1,5 +1,5 @@
 import glob
-import baker
+import click
 import datetime
 import time
 import colorama
@@ -44,7 +44,14 @@ def normalize_sender_name(x, phonebook):
         return phonebook.get(x, x)
     return x
 
-@baker.command
+@click.group()
+def cli():
+    pass
+
+@cli.command()
+@click.option("--log_file", type=str, required=True)
+@click.option("--output_file", type=str, required=True)
+@click.option("--phonebook", type=str, required=False, default=None)
 def csv(log_files, output_file, phonebook=None):
     data = parse(log_files)
     if phonebook:
@@ -67,4 +74,4 @@ def csv(log_files, output_file, phonebook=None):
 
 if __name__ == '__main__':
     colorama.init(strip=False)
-    baker.run()
+    cli()

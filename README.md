@@ -6,7 +6,7 @@ Control car gate at my building
 * create ssh empty file on the SDCard
 * First boot
 * SSH to IP, pi/raspberry
-* sudo rasp-config
+* sudo raspi-config
 * update tool
 * Change password
 * Setup WiFi
@@ -23,7 +23,7 @@ sudo apt install espeak mpg321 python3-pip vim -y
 sudo rm `which python`
 sudo ln -s `which python3` /usr/bin/python
 sudo python -m pip install --upgrade pip
-sudo python -m pip install tendo ansicolors colorama baker future telepot pyserial rpi-rf
+sudo python -m pip install tendo ansicolors colorama click future telepot pyserial rpi-rf
 ```
 Comment out the line "GPIO.setmode(GPIO.BCM)" - in the file /usr/local/lib/python3.7/dist-packages/rpi_rf/rpi_rf.py
 * Over FTP/SFTP

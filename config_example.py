@@ -8,8 +8,10 @@ GPIO_GATE_UP    = 36
 GPIO_GATE_POWER = 38
 GPIO_GATE_HOLD  = 40 # Not in use
 
+TEMPERATURE_CHECK_INTERVAL = 300
+
 MP3_PLAYER = 'mpg321'
-current_datetime_str = datetime.now().strftime("%Y%m%d_%I%M")
+current_datetime_str = datetime.now().strftime("%Y%m%d")
 LOG_FILE_NAME = "logs/ctl_" + current_datetime_str + ".log"
 OPERATION_LOG = "logs/operation_%s.log"
 PING_INTERVAL = 60 * 2

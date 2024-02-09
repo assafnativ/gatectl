@@ -4,8 +4,9 @@ import sys
 import subprocess
 import multiprocessing as mp
 import traceback
+import math
 
-import baker
+import click
 import re
 
 from common import *
@@ -16,6 +17,7 @@ from rfcontrol import *
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 EXPECTED_CONFIGURATIONS = [
+        'TEMPERATURE_CHECK_INTERVAL',
         'GSM_PWR_PIN',
         'GSM_SERIAL_DEV',
         'GPIO_GATE_UP',
@@ -54,7 +56,11 @@ def playMusic(fname):
     else:
         runInBackground(cmd)
 
-@baker.command
+@click.group()
+def cli():
+    pass
+
+@cli.command()
 def get_pi_temperature():
     stdout, _ = subprocess.Popen(['vcgencmd', 'measure_temp'], stdout=subprocess.PIPE).communicate()
     result = re.findall(b"([0-9\\.]*)'C", stdout)
@@ -62,7 +68,7 @@ def get_pi_temperature():
         return 0.0
     return float(result[0])
 
-@baker.command
+@cli.command()
 def validate_usb():
     stdout, _ = subprocess.Popen(['lsusb'], stdout=subprocess.PIPE).communicate()
     for usb_id in cfg['MUST_EXISTS_USB']:
@@ -71,12 +77,12 @@ def validate_usb():
             return False
     return True
 
-@baker.command
+@cli.command()
 def reboot_system():
     logPrint(colors.red("Rebooting!!!"))
     runInBackground("reboot")
 
-@baker.command
+@cli.command()
 def run():
     me = singleton.SingleInstance()
     logPrint("My PID is %d" % os.getpid())
@@ -110,10 +116,11 @@ class GateControl(object):
         self.cmdQueue = self.globalCtx.Queue()
         self.gateQueue = self.globalCtx.Queue()
         self.gateModules = [
-                (MachineLoopRun, 'gateMachine', 'gateMachineProcess', (cfg, self.gateQueue,)),
-                (TelegramBotRun, 'TelegramBot', 'telegramBotProcess', (cfg, self.cmdQueue,)),
-                (GSMHatRun, 'GSM', 'GSMHatProcess', (cfg, self.cmdQueue,)),
-                (RFCtlRun, 'RF', 'RFCtlProcess', (cfg, self.cmdQueue,))]
+                    (MachineLoopRun, 'gateMachine', 'gateMachineProcess', (cfg, self.gateQueue,)),
+                    (TelegramBotRun, 'TelegramBot', 'telegramBotProcess', (cfg, self.cmdQueue,)),
+                    (GSMHatRun, 'GSM', 'GSMHatProcess', (cfg, self.cmdQueue,)),
+                    (RFCtlRun, 'RF', 'RFCtlProcess', (cfg, self.cmdQueue,)),
+                ]
         self.modulesRestart = 0
         for _, _, var, _ in self.gateModules:
             setattr(self, var, None)
@@ -280,7 +287,7 @@ class GateControl(object):
                 elif 'SMS' == moduleName:
                     self.handleMessage((sender, msg), 'whitelist.txt', True)
 
-            if 60 < (time.time() - self.lastTempCheck):
+            if cfg.get('TEMPERATURE_CHECK_INTERVAL', math.inf) < (time.time() - self.lastTempCheck):
                 self.lastTempCheck = time.time()
                 logPrint("Pi temperature is %f" % get_pi_temperature())
             if cfg['PING_INTERVAL'] < (time.time() - self.lastPing):
@@ -299,5 +306,5 @@ class GateControl(object):
 
 if __name__ == '__main__':
     colorama.init(strip=False)
-    baker.run()
+    cli()
 

@@ -1,7 +1,8 @@
 from rpi_rf import RFDevice
 import RPi.GPIO as GPIO
+import traceback
 
-import baker
+import click
 
 from common import *
 
@@ -53,7 +54,12 @@ class RFControl(object):
             return False
         return True
 
-@baker.command
+@click.group()
+def cli():
+    pass
+
+@cli.command()
+@click.option("--gpio", type=int, required=True)
 def rf_test(gpio):
     gpio = int(gpio)
     rfCtl = RFControl(gpio, None, [(0, 1000)], [(0, 10000)])
@@ -81,5 +87,5 @@ def RFCtlRun(cfg, cmdQueue):
 
 if __name__ == '__main__':
     colorama.init(strip=False)
-    baker.run()
+    cli()
 

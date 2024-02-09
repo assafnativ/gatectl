@@ -1,7 +1,8 @@
 import os
 
-import baker
+import click
 import telepot
+import traceback
 
 from common import *
 
@@ -48,7 +49,11 @@ class TelegramBot(object):
                 lastMsgFile.write(str(lastId))
         return result
 
-@baker.command
+@click.group()
+def cli():
+    pass
+
+@cli.command()
 def read_telegram_messages():
     cfg = configLoad('config.py')
     telegramBot = TelegramBot(cfg['TELEGRAM_BOT_TOKEN'], cfg['TELEGRAM_LAST_MSG_FILE'])
@@ -74,5 +79,5 @@ def TelegramBotRun(cfg, cmdQueue):
 
 if __name__ == '__main__':
     colorama.init(strip=False)
-    baker.run()
+    cli()
 

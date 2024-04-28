@@ -4,6 +4,7 @@ import time
 import multiprocessing as mp
 import multiprocessing_logging
 import logging
+import fcntl
 
 import colors
 import colorama
@@ -32,6 +33,27 @@ def getLogger():
         logger.addHandler(handler)
     multiprocessing_logging.install_mp_handler()
     return logger
+
+LOCK_FILE_HANDLE = None
+def validate_single_instance(name):
+    global LOCK_FILE_HANDLE
+    if LOCK_FILE_HANDLE:
+        print(f"File already locked")
+        return False
+    lock_file_path = cfg['LOCK_FILE'] + '_' + name
+    LOCK_FILE_HANDLE = os.open(lock_file_path, os.O_WRONLY | os.O_CREAT)
+    try:
+        print(f"Locking {lock_file_path}")
+        fcntl.lockf(LOCK_FILE_HANDLE, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except IOError:
+        print(f"File is already locked {lock_file_path}")
+        return False
+    except PermissionError:
+        print(f"File {lock_file_path} is opened by someone stronger")
+        return False
+    print("WTF! 12483749")
+    return False
 
 def logPrint(text):
     getLogger().info(text)

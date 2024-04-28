@@ -2,8 +2,6 @@ from rpi_rf import RFDevice
 import RPi.GPIO as GPIO
 import traceback
 
-import click
-
 from common import *
 
 class RFControl(object):
@@ -54,12 +52,6 @@ class RFControl(object):
             return False
         return True
 
-@click.group()
-def cli():
-    pass
-
-@cli.command()
-@click.option("--gpio", type=int, required=True)
 def rf_test(gpio):
     gpio = int(gpio)
     rfCtl = RFControl(gpio, None, [(0, 1000)], [(0, 10000)])
@@ -69,6 +61,7 @@ def rf_test(gpio):
         time.sleep(0.1)
 
 def RFCtlRun(cfg, cmdQueue):
+    validate_single_instance('rfctl')
     rfCtl = RFControl(cfg['RF_GPIO'], cfg['RF_PROTO'], cfg['RF_CODE'], cfg['RF_PULSELENGTH'])
     while True:
         if os.path.isfile(cfg['KILL_FILE']):
@@ -85,7 +78,5 @@ def RFCtlRun(cfg, cmdQueue):
                 logPrint(colors.bold(colors.red(last_error)))
                 time.sleep(10)
 
-if __name__ == '__main__':
-    colorama.init(strip=False)
-    cli()
+colorama.init(strip=False)
 

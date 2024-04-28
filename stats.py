@@ -1,5 +1,4 @@
 import glob
-import click
 import datetime
 import time
 import colorama
@@ -30,7 +29,6 @@ def parse_single_file(fname):
             result.append(entry)
     return result
 
-@baker.command
 def parse(log_files):
     data = []
     for fname in glob.glob(log_files):
@@ -44,14 +42,6 @@ def normalize_sender_name(x, phonebook):
         return phonebook.get(x, x)
     return x
 
-@click.group()
-def cli():
-    pass
-
-@cli.command()
-@click.option("--log_file", type=str, required=True)
-@click.option("--output_file", type=str, required=True)
-@click.option("--phonebook", type=str, required=False, default=None)
 def csv(log_files, output_file, phonebook=None):
     data = parse(log_files)
     if phonebook:
@@ -72,6 +62,4 @@ def csv(log_files, output_file, phonebook=None):
             sender = normalize_sender_name(item['sender'], phonebook)
             writter.write('%s,%s\n' % (date.strftime('%Y/%m/%d,%H:%M'), sender))
 
-if __name__ == '__main__':
-    colorama.init(strip=False)
-    cli()
+colorama.init(strip=False)

@@ -5,9 +5,7 @@ import subprocess
 import multiprocessing as mp
 import traceback
 import math
-import fcntl
 
-import click
 import re
 
 from common import *
@@ -58,11 +56,6 @@ def playMusic(fname):
     else:
         runInBackground(cmd)
 
-@click.group()
-def cli():
-    pass
-
-@cli.command()
 def get_pi_temperature():
     stdout, _ = subprocess.Popen(['vcgencmd', 'measure_temp'], stdout=subprocess.PIPE).communicate()
     result = re.findall(b"([0-9\\.]*)'C", stdout)
@@ -70,7 +63,6 @@ def get_pi_temperature():
         return 0.0
     return float(result[0])
 
-@cli.command()
 def validate_usb():
     stdout, _ = subprocess.Popen(['lsusb'], stdout=subprocess.PIPE).communicate()
     for usb_id in cfg['MUST_EXISTS_USB']:
@@ -79,32 +71,12 @@ def validate_usb():
             return False
     return True
 
-@cli.command()
 def reboot_system():
     logPrint(colors.red("Rebooting!!!"))
     runInBackground("reboot")
 
-LOCK_FILE_HANDLE = None
-def validate_single_instance():
-    global LOCK_FILE_HANDLE
-    if LOCK_FILE_HANDLE:
-        print(f"File already locked")
-        return False
-    lock_file_path = cfg['LOCK_FILE']
-    LOCK_FILE_HANDLE = os.open(lock_file_path, os.O_WRONLY | os.O_CREAT)
-    try:
-        print(f"Locking {lock_file_path}")
-        fcntl.lockf(LOCK_FILE_HANDLE, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return True
-    except IOError:
-        print(f"File is already locked {lock_file_path}")
-        return False
-    print("WTF! 12483749")
-    return False
-
-@cli.command()
 def run():
-    assert validate_single_instance(), "Already running!"
+    assert validate_single_instance('main'), "Already running!"
     logPrint("My PID is %d" % os.getpid())
     playMusic('ping.mp3')
     logPrint(colors.blue("Starting!"))
@@ -327,5 +299,6 @@ class GateControl(object):
 
 if __name__ == '__main__':
     colorama.init(strip=False)
-    cli()
+    if 2 <= len(sys.argv) and sys.argv[1] == 'run':
+        run()
 

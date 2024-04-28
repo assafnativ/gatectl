@@ -1,7 +1,6 @@
 import binascii
 import time
 import traceback
-import click
 
 import RPi.GPIO as GPIO
 import serial
@@ -195,6 +194,7 @@ class GSMHat(object):
                 self.resetIfNeeded()
 
 def GSMHatRun(cfg, cmdQueue):
+    validate_single_instance('gsmhat')
     gsm = None
     try:
         gsm = GSMHat(cfg, cmdQueue)
@@ -209,12 +209,6 @@ def GSMHatRun(cfg, cmdQueue):
             gsm = None
 
 
-@click.group()
-def cli():
-    pass
-
-if __name__ == '__main__':
-    colorama.init(strip=False)
-    cli()
+colorama.init(strip=False)
 
 

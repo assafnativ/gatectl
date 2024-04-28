@@ -5,7 +5,6 @@ import os
 import traceback
 import multiprocessing as mp
 
-import click
 import colors
 from datetime import datetime
 import RPi.GPIO as GPIO
@@ -56,12 +55,6 @@ class GateMachine(object):
         self.deactivatePin(self.power_gpio, active_low=active_low)
         logPrint("Gate power off")
 
-@click.group()
-def cli():
-    pass
-
-@cli.command()
-@click.option('--uptime', type=int, default=2, required=False)
 def up(uptime=2):
     cfg = configLoad('config.py')
     uptime = float(uptime)
@@ -69,6 +62,7 @@ def up(uptime=2):
     gm.up(uptime)
 
 def MachineLoopRun(cfg, cmdQueue):
+    validate_single_instance('machine')
     logPrint("Gate machine started")
     gm = GateMachine(cfg['GPIO_GATE_UP'], cfg['GPIO_GATE_POWER'])
     while True:
@@ -85,8 +79,5 @@ def MachineLoopRun(cfg, cmdQueue):
             last_error = traceback.format_exc()
             logPrint(colors.bold(colors.red(last_error)))
 
-
-if __name__ == '__main__':
-    colorama.init(strip=False)
-    cli()
+colorama.init(strip=False)
 

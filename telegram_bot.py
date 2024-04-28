@@ -1,10 +1,10 @@
 import os
 
-import click
 import telepot
 import traceback
 
 from common import *
+from urllib3.exceptions import ReadTimeoutError
 
 class TelegramBot(object):
     def __init__(self, token, lastMsgFileName):
@@ -24,6 +24,10 @@ class TelegramBot(object):
         messages = None
         try:
             messages = self.bot.getUpdates(self.lastMsgId, timeout=1.1)
+        except ReadTimeoutError as e:
+            logPrint('Got timeout error, will try again later')
+            time.sleep(20)
+            return []
         except Exception as e:
             last_error = traceback.format_exc()
             logPrint('Got exception in getMessage: \n' + colors.bold(colors.red(last_error)))
@@ -50,11 +54,6 @@ class TelegramBot(object):
                 lastMsgFile.write(str(lastId))
         return result
 
-@click.group()
-def cli():
-    pass
-
-@cli.command()
 def read_telegram_messages():
     cfg = configLoad('config.py')
     telegramBot = TelegramBot(cfg['TELEGRAM_BOT_TOKEN'], cfg['TELEGRAM_LAST_MSG_FILE'])
@@ -62,6 +61,7 @@ def read_telegram_messages():
         logPrint("%s sent: %s" % (sender, text))
 
 def TelegramBotRun(cfg, cmdQueue):
+    assert validate_single_instance('telegrambot'), "Already running!"
     logPrint("Telegram Bot main loop")
     telegramBot = TelegramBot(cfg['TELEGRAM_BOT_TOKEN'], cfg['TELEGRAM_LAST_MSG_FILE'])
     while True:
@@ -79,7 +79,5 @@ def TelegramBotRun(cfg, cmdQueue):
             time.sleep(4)
             raise e
 
-if __name__ == '__main__':
-    colorama.init(strip=False)
-    cli()
+colorama.init(strip=False)
 
